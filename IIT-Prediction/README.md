@@ -26,7 +26,7 @@ In this repository, we have the following folders:
 We also have the following files:
 
 * prediction.Rmd - A file containing an outline of how to use the model to predict.
-* helpers.Rmd - All the necessary functions needed for making prediction
+* helpers.R - R file containing all the necessary functions needed for making prediction
 
 
 # How to use the model?
