@@ -1,0 +1,298 @@
+---
+title: " Wavumbuzi Peer Review Algorithm Audit "
+author: "K.R.U"
+date: "June 2022"
+output:
+
+  rmdformats::readthedown:
+    highlight: pygments
+    toc_depth: 5
+    number_sections: true
+    
+   
+
+  html_document:
+    toc: true
+    toc_depth: 5
+    number_sections: true
+
+---
+
+
+```{r setup, include=FALSE}
+options(java.parameters = "-Xmx15g")
+
+knitr::opts_chunk$set(warning=FALSE,
+                      message=FALSE,
+                      echo=F,
+                      #dpi=96,
+                     # fig.width=7,# fig.height=4, # Default figure widths
+                     # dev="png", #dev.args=list(type="cairo"), # The png device
+                      # Change to dev="postscript" if you want the EPS-files
+                      # for submitting. Also remove the dev.args() as the postscript
+                      # doesn't accept the type="cairo" argument.
+                      error=FALSE)
+ 
+# Evaluate the figure caption after the plot
+#knitr::opts_knit$set(eval.after='fig.cap')
+ 
+# Use the table counter that the htmlTable() provides
+options(table_counter = TRUE)
+ 
+
+
+# function to install missing packages
+install_missing_packages <- function(pkg){
+  new.pkg <- pkg[!(pkg %in% installed.packages()[, "Package"])]
+  if (length(new.pkg))
+    install.packages(new.pkg, dependencies = TRUE, repos='http://cran.rstudio.com/')
+  sapply(pkg, require, character.only = TRUE)
+}
+
+#install.packages('package_name', dependencies=TRUE, repos='http://cran.rstudio.com/')
+
+packages =c(  "tidyverse",  "dplyr", "flextable",  "ggplot", "ggpubr", "ggthemes", "tidyr",
+              "TSstudio",  "readr","highcharter", "gtsummary",  "ftExtra", "crosstable",  "rbokeh", "skimr")
+
+install_missing_packages(packages)
+
+
+select = dplyr::select; summarize = dplyr::summarize; rename = dplyr::rename; mutate = dplyr::mutate;
+
+flex_outcome= c("stat_1", "stat_2", "stat_3", "stat_4", "stat_5", "stat_6")
+
+
+
+```
+<style type="text/css">
+/* Three image containers (use 25% for four, and 50% for two, etc) */
+.column {
+  float: left;
+  width: 33.33%;
+  padding: 5px;
+}
+
+/* Clear floats after image containers */
+.row::after {
+  content: "";
+  clear: both;
+  display: table;
+}
+
+body {
+background:white !important;
+}
+
+
+
+</style>
+
+         
+<center>
+
+<h2>
+
+
+
+</h2>
+<span>
+
+K.R.U
+
+
+</span>
+
+</center>
+
+# Background
+
+
+The purpose of this research report is to learn about loyalty, and its effect, from repeat users engeaging with the Wavumbuzi Entrepreneurship Challenge (hereafter referred to as WEC) game web-app. WEC is a free annual 6-weeks online challenge offered to learners in all secondary/ high schools across Kenya and Rwanda. It is a gamified experiential learning process designed to equip learners with competencies to be the next generation of global leaders, change-makers and innovative thinkers. Focusing on entrepreneurship (as a widely recognised countermeasure 	to 	unemployment), the  Entrepreneurship Challenge is designed to stimulate and develop the entrepreneurial mindset and 21st Century Skills of learners. 
+
+>Learners are not taught. Instead, every week – over a 6weeks period - learners get a set of challenges, via mobile and computers, that stimulates them to think like entrepreneurs. Each task requires learners to apply new concepts and utilize their knowledge and skills in solving real-world challenges. Teachers are trained on how to guide and encourage learners to engage in and complete the Challenges. 
+
+
+
+
+# Premise
+
+This is a longitudinal study that aims to answer questions relating to re-engegement across WEC iterations / iterations. For example
+
+## Primary Objective
+
+> **To assess the effects of repeating WEC on engegment in the following iteration?** Apart from repeating WEC game play the following year, what other variables are impacting learner re-engagement performance over iterations? Can any of these predict performance?
+
+
+## Secondary Objective
+
+> **To identify the key predictors of a learner repeating the WEC ** -
+Can we predict how likely a given person is to re-engage next year? Does having participated in one iteration make you more likely to participate in the next one? 
+
+
+
+
+
+# Methodology
+
+
+
+## Univariate analysis
+
+Descriptive measures under the univariate setting will be applied to summarize central tendencies and distribution for metric variables.
+
+* Categorical variables such as gender and nationality will be summarized using frequencies and percentages.
+* Categorical variables derived from continuous variables will be categorized using acceptable limits derived from literature
+* Continuous variables such as age, CW, and scores will be summarized using mean and corresponding SD  - assuming Gaussian distribution.
+* Continuous variables that are skewed will be summarized as median and the corresponding interquartile range (IQR).
+
+
+## Bivariate setting
+
+* Association between categorical variables will be assessed using Pearson’s Chi-Square test 
+* Association between categorical and continuous variables will be done using a two-sample t-test, assuming Gaussian distribution for continuous variables.
+* Association between categorical and continuous variables which are not normally distributed will be conducted using a two-sample Wilcoxon rank-sum test.
+ * Kruskal Wallis test (one-way ANOVA on ranks) will be used if the levels of the categorical variable are greater than 2.
+
+## Regression Modeling
+
+Where applicable: 
+ 
+* For continuous response, => Linear regression model will be fitted. Effect modifiers and potential confounders will be adjusted. Regression coefficients and the corresponding 95% confidence interval will be reported.
+* For binary response => association between multiple risk factors and the response, the variable will be conducted by fitting multiple logistic regression models. Effect modifiers and potential confounders will be adjusted. Odds ratios and the corresponding 95% confidence interval will be reported.
+
+## Participant Record Linkage
+
+
+### Probabilistic record linkage
+Probabilistic linking is a method for combining information from records on different datasets to form a new linked dataset. It has been described as a process that attempts to link records on different files that have the greatest probability of belonging to the same person/organisation. Whereas deterministic (or exact) linking uses a unique identifier to link datasets, probabilistic linking uses a number of identifiers, in combination, to identify and evaluate links. Probabilistic linking is generally used when a unique identifier is not available or is of insufficient quality. 
+
+<p style="text-align:center;">
+<img src ='https://www.mdpi.com/ijerph/ijerph-17-06937/article_deploy/html/images/ijerph-17-06937-g002-550.jpg' width="700" >
+</p>
+
+There are varous methods of probabilistic record linkage 
+- **Fellegi and Sunter (1969)** -> requires sophisticated software to perform the calculations. References at the end of this sheet provide more information about linking algorithms.
+- **Active Learning** ->  is an extension to Fellegi and Sunter (1969) + semi-supervised machine learning implementation to probabilistic record linkage 
+
+
+### The Fellegi and Sunter method
+
+Is a probabilistic approach to solve record linkage problem based on decision model. Records in data sources are assumed to represent observations of entities taken from a particular population (individuals, companies, enterprises, farms, geographic region, families, households...). The records are assumed to contain some attributes identifying an individual entity. Examples of identifying attributes are name, address, age and gender when dealing with people; style (or name) of a firm, legal form, address, number of local units, number of employees, turnover value when dealing with businesses. According to the method, given two (or more) sources of data, all pairs coming from the Cartesian product of the two sources has to be classified in three independent and mutually exclusive subsets: the set of matches, the set of non-matches and the set of pairs requiring manual review. In order to classify the pairs, the comparisons on common attributes are used to estimate for each pair the probabilities to belong to both the set of matches and the set of non-matches. The pair classification criteria is based on the ratio between such conditional probabilities. The decision model aims to minimize both the misclassification errors and the probability of classifying a pair as belonging to the subset of pairs requiring manual review.
+
+
+<p style="text-align:center;">
+<img src ='https://toolkit.data.gov.au/images/9/9c/Data_Linking_-_Sheet_4_-_Diagram_1.jpeg' width="700" >
+</p>
+
+The key steps of probabilistic linking (as shown in Diagram 1) are: 1. Data cleaning and standardisation 2. Blocking 3. Linking 4. Clerical review 5. Evaluating data quality
+
+* **Blocking** – divides datasets into groups, called blocks, in order to reduce the number of comparisons that need to be conducted to find which pairs of records should be linked. Only records in corresponding blocks on each dataset are compared, to identify possible links.
+* **Fields** – types of information, such as name, address, date of birth, on the records in datasets.
+* **Linked dataset** – the result of linking different datasets is a new dataset whose records contain some information from each of the original datasets.
+* **Links** – records that have been combined after being assessed as referring to the same entity (i.e., person/family/organisation/region).
+* **Unique identifier** – a number or code that uniquely identifies a person, business or organisation, such as passport number or Australian Business Number (ABN).
+
+### Active Learning
+
+The main hypothesis in active learning is that if a learning algorithm can choose the data it wants to learn from, it can perform better than traditional methods with substantially less data for training.
+In active learning, there are typically three scenarios or settings in which the learner will query the labels of instances. The three main scenarios that have been considered in the literature are: Membership Query Synthesis, Stream-Based Selective Sampling, and Pool-Based sampling.
+
+Pool-Based sampling: assumes that there is a large pool of unlabelled data, as with the stream-based selective sampling. Instances are then drawn from the pool according to some informativeness measure. This measure is applied to all instances in the pool (or some subset if the pool is very large) and then the most informative instance(s) are selected.
+
+
+<p style="text-align:center;">
+<img src ='http://res.cloudinary.com/dyd911kmh/image/upload/f_auto,q_auto:best/v1518178638/pool_guqwfe.png' width="700" >
+</p>
+
+
+# Data sources
+
+Game data was collected over the last two years using an online web app hosted using AWS platform. The WEC was first launched in Kenya in 2019 while in Rwanda it was first launched in 2020. As such, In Kenya we are using WEC engament dataset for 2019 and 2020, while in Rwanda we are using dataset for 2020 and 2021. 
+
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE, echo=F}
+# import data for Kenya
+wec_ke_link <- readr::read_csv("data/wavumbuzi_ke_i01_to_i02.csv", na = "null")%>% filter(match_probability>=0.01)%>%
+  rename_with( ~ tolower(gsub("_i01", " i02", .x, fixed = TRUE)))%>%
+  rename_with( ~ tolower(gsub("_i02", " i01", .x, fixed = TRUE)))%>%
+  rename_with( ~ tolower(gsub(" i0", "_i0", .x, fixed = TRUE)))%>%
+  group_by(unique_id_i02)%>%filter(row_number()==1)%>%ungroup()
+
+
+wec_ke_i01_y2019 <- readr::read_csv("data/wavumbuzi_ke_i01_y2019.csv", na = "null")%>%mutate(country="Kenya") %>% 
+  left_join(wec_ke_link%>%select("unique_id_i01","match_probability", "unique_id_i02"), by=c("id" = "unique_id_i01"))%>%mutate(
+    Repeat_User = if_else(is.na(match_probability), "No", "Yes")
+  )
+
+wec_ke_i02_y2020 <- readr::read_csv("data/wavumbuzi_ke_i02_y2020.csv", na = "null")%>%mutate(country="Kenya") %>% 
+  left_join(wec_ke_link%>%select("unique_id_i02","match_probability", "unique_id_i01"), by=c("id" = "unique_id_i02"))%>%mutate(
+    Repeat_User = if_else(is.na(match_probability), "No", "Yes")
+  )
+
+
+# import data for Rwanda
+
+wec_rw_link <- readr::read_csv("data/wavumbuzi_rw_i01_to_i02.csv", na = "null")%>% filter(match_probability>=0.01)%>%
+  rename_with( ~ tolower(gsub("_i01", " i02", .x, fixed = TRUE)))%>%
+  rename_with( ~ tolower(gsub("_i02", " i01", .x, fixed = TRUE)))%>%
+  rename_with( ~ tolower(gsub(" i0", "_i0", .x, fixed = TRUE)))%>%
+  group_by(unique_id_i02)%>%filter(row_number()==1)%>%ungroup()
+
+
+wec_rw_i01_y2020 <- readr::read_csv("data/wavumbuzi_rw_i01_y2020.csv", na = "null")%>%mutate(country="Rwanda")%>% 
+  left_join(wec_rw_link%>%select("unique_id_i01","match_probability", "unique_id_i02"), by=c("id" = "unique_id_i01"))%>%mutate(
+    Repeat_User = if_else(is.na(match_probability), "No", "Yes"),
+    Age=as.numeric(difftime(as.Date(createdAt), as.Date(date_of_birth), unit="weeks"))/52.25
+  )
+
+wec_rw_i02_y2021 <- readr::read_csv("data/wavumbuzi_rw_i02_y2021.csv", na = "null")%>%mutate(country="Rwanda")%>% 
+  left_join(wec_rw_link%>%select("unique_id_i02","match_probability", "unique_id_i01"), by=c("id" = "unique_id_i02"))%>%mutate(
+    Repeat_User = if_else(is.na(match_probability), "No", "Yes"),
+    Age=as.numeric(difftime(as.Date(createdAt), as.Date(date_of_birth), unit="weeks"))/52.25
+  )
+
+
+
+
+# Combine data for KE and RW
+
+clean.i02 = dplyr::bind_rows(wec_ke_i02_y2020, wec_rw_i02_y2021)
+
+
+
+```
+
+
+
+
+# Exploratory Data Analysis
+
+## DID
+
+```{r fig.align='center', cache=F, fig.width=10, warning=FALSE}
+waldo::compare(names(wec_ke_i02_y2020), names(wec_rw_i02_y2021))
+```
+
+## EDA Summary
+
+
+```{r fig.align='center', cache=F, fig.width=10, warning=FALSE}
+
+skimr::skim(clean.df)
+
+```
+
+
+
+
+
+
+
+##  Missing Data
+
+```{r fig.align='center', cache=F,  fig.height=20, warning=FALSE}
+
+clean.i02 %>% finalfit::missing_plot()
+
+
+```
