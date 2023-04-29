@@ -48,9 +48,10 @@ clean_longitudinal_data = function(df){
   time_varrying.df=df%>% 
     mutate(
       
-      # Set NA
+      # Set NA: for 1 and NA levels
       Presence_of_OIs = if_else(is.na(Presence_of_OIs),0,1),
-      Adherence_Counselling_Sessions =  if_else(is.na(Adherence_counseling),0,1),
+      Pregnancy = if_else(is.na(Pregnancy),0,1),
+      Adherence_Counselling_Sessions =  if_else(is.na(Adherence_counseling),0,as.numeric(Adherence_counseling)),
       
       # Clean Encounter Type Class
       Encounter_Type_Class = case_when(
@@ -136,12 +137,12 @@ clean_longitudinal_data = function(df){
       
       # VL processing
       VL_suppression = if_else(Viral_Load >= 1000 | is.na(Viral_Load), 0, 1),
-      Viral_Load_log10 = log10(Viral_Load+0.00000000000000001) # to avoid log10(0) = -Inf
+      Viral_Load_log10 = log10(Viral_Load+1) # to avoid log10(0) = -Inf
       
       
     )  %>%
     group_by(patientID, Encounter_Date) %>%
-    filter(row_number()==1)%>%ungroup() %>% # This collapses multiple encounters per days 
+    filter(row_number()==1)%>%ungroup() %>% # This collapses multiple encounters per day
     group_by(patientID) %>%
     arrange( patientID, Encounter_Date)%>% # Just to make sure cronology of events are descending
     mutate(
@@ -156,6 +157,25 @@ clean_longitudinal_data = function(df){
       ),
       
       Visit_Number = row_number(),
+      
+      # Lab Values
+      # NOTE _order_Date are highly missing so we estimate potential vl/cd4 order date
+      VL_Order_Date_Estimated = if_else( !is.na(Viral_Load) & is.na(VL_Order_Date),  
+                                         lag(Encounter_Date, order_by =Encounter_ID), # use last Enc as VL_Order_Date
+                                         VL_Order_Date # otherwise use VL_Order_Date 
+      ),
+      VL_Order_Date_Estimated =  na.locf( VL_Order_Date_Estimated, na.rm = FALSE), # LOCF
+      
+      # NOTE _order_Date are highly missing so we estimate potential vl/cd4 order date
+      CD4_Order_Date_Estimated = if_else( !is.na(CD4) & is.na(CD4_Order_Date),  
+                                          lag(Encounter_Date, order_by =Encounter_ID), # use last Enc as CD4_Order_Date
+                                          CD4_Order_Date # otherwise use CD4_Order_Date 
+      ),
+      CD4_Order_Date_Estimated =  na.locf(CD4_Order_Date_Estimated, na.rm = FALSE), # LOCF
+      
+      # Calculate Days_Since_Last
+      Days_Since_Last_VL = as.numeric(difftime(Encounter_Date, VL_Order_Date_Estimated, units = "days")),
+      Days_Since_Last_CD4 = as.numeric(difftime(Encounter_Date, CD4_Order_Date_Estimated, units = "days")),
       
       # Labeled response variables
       `Days defaulted` =   difftime(Next_Encounter_Datetime , RTC_Date , units = c("days")),
@@ -196,8 +216,6 @@ clean_longitudinal_data = function(df){
           any(head(x,-1))
         }
       ))
-    
-      
     ) %>%
     ungroup() 
   
@@ -221,7 +239,7 @@ clean_longitudinal_data = function(df){
                           'Entry_Point', 
                           'Education_Level',  
                           "Occupation",
-                          "Presence_of_OIs", 
+                          #"Presence_of_OIs", REMOVED in V3
                           "Adherence_Counselling_Sessions",
                           "Clinic_Name", 
                           'ART_regimen'
@@ -232,6 +250,9 @@ clean_longitudinal_data = function(df){
     group_by(patientID) %>%
     #LOCF stands for “Last Observation Carried Forward.” 
     mutate(across(all_of(vars_to_impute), ~ifelse(is.na(.), na.locf(., na.rm = FALSE), .))) %>% 
+    # Add baseline vars in V3
+    mutate(across(all_of(vars_to_impute), baseline = .[Visit_Number == 1], .names = "{.col}_baseline")) %>%
+    
     ungroup()%>%
     ## Factor the response variable
     mutate(
@@ -239,6 +260,22 @@ clean_longitudinal_data = function(df){
       y1=as.factor(`disengagement-2wks`),
       y2=as.factor(`disengagement-1month`), # This is the main reponse that was used to train the models
       y3=as.factor(`disengagement-3month`),
+    ) %>%
+    mutate( # V3: Remove Outliers
+      
+      Duration_in_HIV_care =  if_else(between(Duration_in_HIV_care, 0, 100), Duration_in_HIV_care,NA_real_),
+      BMI =  if_else(between(BMI, 5, 35), BMI,NA_real_),
+      CD4 =  if_else(between(CD4, 0, 1500), CD4,NA_real_),
+      
+      Viral_Load_log10 =  if_else(between(Viral_Load_log10, -10, 10), Viral_Load_log10,NA_real_),
+      Days_defaulted_in_prev_enc =  if_else(Days_defaulted_in_prev_enc<=-31, -31,Days_defaulted_in_prev_enc),
+      
+      Days_Since_Last_VL =  if_else(Days_Since_Last_VL<0, 0,Days_Since_Last_VL),
+      Days_Since_Last_CD4 =  if_else(Days_Since_Last_CD4<0, 0,Days_Since_Last_CD4),
+      
+      BMI_baseline =  if_else(between(BMI_baseline, 5, 35), BMI_baseline,NA_real_),
+      CD4_baseline =  if_else(between(CD4_baseline, 0, 1500), CD4_baseline,NA_real_),
+      Viral_Load_log10_baseline =  if_else(between(Viral_Load_log10_baseline, -10, 10), Viral_Load_log10_baseline,NA_real_)
     )
   
   return(clean.df)
