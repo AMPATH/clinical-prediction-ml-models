@@ -118,7 +118,7 @@ IIn this method missing observations are set to a fixed value (usually zero, but
 # Handle Missing Data
 main.df = clean.df%>%
   mutate(
-     # Add Missing Data Indicators
+    # Add missing Data Indicators
     Age_NA= ifelse(is.na(Age), 1, 0),
     Duration_in_HIV_care_NA= ifelse(is.na(Duration_in_HIV_care),  1, 0),
     Weight_NA= ifelse(is.na(Weight), 1, 0),
@@ -129,12 +129,12 @@ main.df = clean.df%>%
     HIV_disclosure_NA= ifelse(is.na(HIV_disclosure),  1, 0),
     CD4_NA= ifelse(is.na(CD4), 1, 0),
     Viral_Load_log10_NA= ifelse(is.na(Viral_Load_log10), 1, 0),
-    Days_to_Start_of_ART_NA= ifelse(is.na(Days_to_Start_of_ART),  1, 0),
+    #Days_to_Start_of_ART_NA= ifelse(is.na(Days_to_Start_of_ART),  1, 0), #REMOVED in V3
     Adherence_Counselling_Sessions_NA = ifelse(is.na(Adherence_Counselling_Sessions),  1, 0),
-     Days_defaulted_in_prev_enc_NA= ifelse(is.na(Days_defaulted_in_prev_enc), 1, 0),
-     num_2wks_defaults_last_3visits_NA= ifelse(is.na(num_2wks_defaults_last_3visits), 1, 0),
-     ever_defaulted_by_1m_in_last_1year_NA= ifelse(is.na(ever_defaulted_by_1m_in_last_1year), 1, 0),
-     ever_defaulted_by_1m_in_last_2year_NA= ifelse(is.na(ever_defaulted_by_1m_in_last_2year), 1, 0),
+    Days_defaulted_in_prev_enc_NA= ifelse(is.na(Days_defaulted_in_prev_enc), 1, 0),
+    num_2wks_defaults_last_3visits_NA= ifelse(is.na(num_2wks_defaults_last_3visits), 1, 0),
+    ever_defaulted_by_1m_in_last_1year_NA= ifelse(is.na(ever_defaulted_by_1m_in_last_1year), 1, 0),
+    ever_defaulted_by_1m_in_last_2year_NA= ifelse(is.na(ever_defaulted_by_1m_in_last_2year), 1, 0),
     
     # Set NA to a fixed value (usually zero)
     Age= ifelse(is.na(Age), 0, Age),
@@ -146,11 +146,11 @@ main.df = clean.df%>%
     Regimen_Line= ifelse(is.na(Regimen_Line), 0, Regimen_Line),
     HIV_disclosure= ifelse(is.na(HIV_disclosure), 0, HIV_disclosure),
     CD4= ifelse(is.na(CD4),0, CD4),
-    Viral_Load_log10= ifelse(is.na(Viral_Load_log10), log10(0.00000000000000001), Viral_Load_log10),
-    Days_to_Start_of_ART= ifelse(is.na(Days_to_Start_of_ART), 0, Days_to_Start_of_ART),
+    Viral_Load_log10= ifelse(is.na(Viral_Load_log10), log10(1), Viral_Load_log10),
+    #Days_to_Start_of_ART= ifelse(is.na(Days_to_Start_of_ART), 0, Days_to_Start_of_ART),  #REMOVED in V3
     Adherence_Counselling_Sessions_NA= ifelse(is.na(Adherence_Counselling_Sessions), 0, Adherence_Counselling_Sessions),
-     Days_defaulted_in_prev_enc= ifelse(is.na(Days_defaulted_in_prev_enc),0, Days_defaulted_in_prev_enc),
-     num_2wks_defaults_last_3visits= ifelse(is.na(num_2wks_defaults_last_3visits),0, num_2wks_defaults_last_3visits),
+    Days_defaulted_in_prev_enc= ifelse(is.na(Days_defaulted_in_prev_enc),0, Days_defaulted_in_prev_enc),
+    num_2wks_defaults_last_3visits= ifelse(is.na(num_2wks_defaults_last_3visits),0, num_2wks_defaults_last_3visits),
     ever_defaulted_by_1m_in_last_1year= ifelse(is.na(ever_defaulted_by_1m_in_last_1year),0,ever_defaulted_by_1m_in_last_1year),
     ever_defaulted_by_1m_in_last_2year= ifelse(is.na(ever_defaulted_by_1m_in_last_2year),0, ever_defaulted_by_1m_in_last_2year)
    
@@ -171,33 +171,52 @@ x=c(    'Age','Age_NA',
         'Gender' ,  
         'Marital_status', 
         'Duration_in_HIV_care', 'Duration_in_HIV_care_NA',  
-        #'Weight' ,'Weight_NA','Height' , 'Height_NA', 
         'BMI', 'BMI_NA',
         'Travel_time',  
-        'Days_to_Start_of_ART', 'Days_to_Start_of_ART_NA', 
+        #'Days_to_Start_of_ART', 'Days_to_Start_of_ART_NA', 
         'WHO_staging','WHO_staging_NA',
-        'Viral_Load_log10', 'Viral_Load_log10_NA', 'VL_suppression',
+        'Viral_Load_log10', 'Viral_Load_log10_NA', 'VL_suppression', 'Days_Since_Last_VL',
         'HIV_disclosure','HIV_disclosure_NA', 
         'Regimen_Line', 'Regimen_Line_NA',  
         'Pregnancy',
         'Clinic_Location',
         'TB_Comorbidity',
-        'CD4','CD4_NA', 
+        'CD4','CD4_NA', 'Days_Since_Last_CD4',
         'Entry_Point', 
         "Encounter_Type_Class",
          'Education_Level',  
         "Occupation",
-        "Presence_of_OIs", 
+       # "Presence_of_OIs", 
         "Adherence_Counselling_Sessions",
         "Clinic_Name", 
         'ART_regimen',
-        
-        #Longitudinal
         'Visit_Number', 
         'Days_defaulted_in_prev_enc', 'Days_defaulted_in_prev_enc_NA',
          'num_2wks_defaults_last_3visits', 'num_2wks_defaults_last_3visits_NA',
         'ever_defaulted_by_1m_in_last_1year','ever_defaulted_by_1m_in_last_1year_NA',
-         'ever_defaulted_by_1m_in_last_2year','ever_defaulted_by_1m_in_last_2year_NA'
+         'ever_defaulted_by_1m_in_last_2year','ever_defaulted_by_1m_in_last_2year_NA',
+        
+        # Baseline => Added in V3
+        'Age_baseline',
+        'Gender_baseline' ,  
+        'Marital_status_baseline', 
+        'BMI_baseline',
+        'Travel_time_baseline',  
+        'WHO_staging_baseline',
+        'VL_suppression_baseline', 
+        'Viral_Load_log10_baseline',
+        'HIV_disclosure_baseline',
+        'Regimen_Line_baseline', 
+        'Pregnancy_baseline',
+        'Clinic_Location_baseline',
+        'TB_Comorbidity_baseline',
+        'CD4_baseline',
+        'Education_Level_baseline',  
+        "Occupation_baseline",
+       # "Presence_of_OIs_baseline", 
+        "Adherence_Counselling_Sessions_baseline",
+        "Clinic_Name_baseline", 
+        'ART_regimen_baseline'
 )
 
 
@@ -218,7 +237,7 @@ print(dim(test[[2]]))
 ## Step 4: Load the Model into the H2O cluster:
 
 ```{r fig.align='center',warning=FALSE, cache=F, echo=T}
-ml_model <- h2o.loadModel("model/V2/1_StackedEnsemble_BestOfFamily_1_AutoML_1_20230421_95108_auc_0.696/StackedEnsemble_BestOfFamily_1_AutoML_1_20230421_95108")
+ml_model <- h2o.loadModel("model/V3/1_StackedEnsemble_AllModels_1_AutoML_1_20230429_112624_auc_0.71/StackedEnsemble_AllModels_1_AutoML_1_20230429_112624")
 ml_model
 ```
 
