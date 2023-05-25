@@ -1,0 +1,330 @@
+---
+title: "HIV Retention & Disengagement Prediction"
+author: "USAID | ADAT "
+date: "May 20, 2022"
+output:
+  html_document:
+    toc: true
+    toc_depth: 5
+    number_sections: false
+---
+
+
+
+
+# Premise
+
+Despite the progress in HIV care in suppressing viral load, disengagement from HIV care remains a significant issue that impairs the 
+path of achieving the global target to end the HIV/AIDS epidemic by 2030, set forth by WHO and the Joint United Nations Programme on HIV/AIDS (UNAIDS). In light of the above, we sought to develop and validate data-driven / AI rules than can be used to foster the early identification of patients at risk of disengagement from care.
+
+# Objective 
+
+> The main objective of this study is to predict disengagement by one month denoted by y_2. 
+
+# Training & Validation of Models
+
+We leveraged Super Learner (Stacked Ensamble) algorithm to train and validated ML models. The details of implementation can be found here:
+
+https://rpubs.com/akimaina/hiv-disengagement-prediction
+
+# Folder Structure
+
+In this repository, we have the following folders:
+
+* EHR Data Extraction SQL - SQL query used to extract data from EHR
+* data - containing sample synthetic data: This is the exact output that the SQL query above provides
+* model - containing the exported models, ranked ordered by AUC performance in descending order
+* training scripts - containing all the scripts used to train and validate the model. Documentation on the methodology can be found here: https://rpubs.com/akimaina/hiv-disengagement-prediction
+
+We also have the following files:
+
+* prediction.Rmd - A file containing an outline of how to use the model to predict.
+* helpers.Rmd - All the necessary functions needed for making prediction
+
+
+# How to use the model?
+
+Please follow the following steps:
+
+## Step 1: Install / Load Relevant Packages
+
+```{r fig.align='center',warning=FALSE, cache=F, echo=T}
+
+
+# function to install missing packages
+ipak <- function(pkg){
+  new.pkg <- pkg[!(pkg %in% installed.packages()[, "Package"])]
+  if (length(new.pkg))
+    install.packages(new.pkg, dependencies = TRUE, repos='http://cran.rstudio.com/')
+  sapply(pkg, require, character.only = TRUE)
+}
+
+#install.packages('package_name', dependencies=TRUE, repos='http://cran.rstudio.com/')
+
+packages =c(  "dplyr", "tidyverse", "highcharter", "zoo", "runner", "readr", "h2o")
+
+ipak(packages)
+
+select = dplyr::select; summarize = dplyr::summarize; rename = dplyr::rename; mutate = dplyr::mutate;
+
+```
+
+‘h2o’ version 3.36.1.2 was used
+
+## Step 2: Intialize H2o Cluster & load helper function
+
+H2O is a fully open source, distributed in-memory machine learning platform with linear scalability. H2O supports the most widely used statistical & machine learning algorithms including gradient boosted machines, generalized linear models, deep learning and more. H2O also has an industry leading AutoML functionality that automatically runs through all the algorithms and their hyperparameters to produce a leaderboard of the best models. The H2O platform is used by over 18,000 organizations globally and is extremely popular in both the R & Python communities.
+
+https://h2o.ai/platform/ai-cloud/make/h2o/
+
+```{r fig.align='center',warning=FALSE, cache=F, echo=T}
+
+# Set seed
+set.seed(123)
+
+# init h20
+h2o.init( ip = "localhost", port = 7777, max_mem_size = "16G", nthreads = -1)
+
+# Load helper functions
+source("helpers.R") #
+
+```
+
+## Step 3. Data Pre-processing
+
+
+
+### Read and clean the data
+
+
+```{r fig.align='center', cache=T, fig.width=10, warning=FALSE}
+raw.df =  readr::read_csv("data/synthetic_data_mimics_output_of_SQL_query.csv", na = "NULL")
+clean.long.df = clean_longitudinal_data(raw.df)
+clean.df= clean.long.df %>%
+      filter(Enrollment_Date >= as.Date("2016-01-01")) 
+```
+
+
+
+###  Handle Missing Data 
+ 
+We are using "Missing-indicator method", because several studies have shown missing data by itself is a predictor of disengagement.
+IIn this method missing observations are set to a fixed value (usually zero, but other numbers will give the same results), and an extra indicator or dummy (1/0) variable is added to the analytical (multivariable) model to indicate whether the value for that variable is missing.
+ 
+ **REF**
+ https://doi.org/10.1503%2Fcmaj.110977 :
+ Groenwold RH, White IR, Donders AR, Carpenter JR, Altman DG, Moons KG. Missing covariate data in clinical research: when and when not to use the missing-indicator method for analysis. CMAJ. 2012 Aug 7;184(11):1265-9. doi: 10.1503/cmaj.110977. Epub 2012 Feb 27. PMID: 22371511; PMCID: PMC3414599.
+ 
+```{r fig.align='center',warning=FALSE, cache=F, echo=T}
+
+# Handle Missing Data
+main.df = clean.df%>%
+  mutate(
+    # Add missing Data Indicators
+    Age_NA= ifelse(is.na(Age), 1, 0),
+    Duration_in_HIV_care_NA= ifelse(is.na(Duration_in_HIV_care),  1, 0),
+    Weight_NA= ifelse(is.na(Weight), 1, 0),
+    Height_NA= ifelse(is.na(Height), 1, 0),
+    BMI_NA= ifelse(is.na(BMI), 1, 0),
+    WHO_staging_NA= ifelse(is.na(WHO_staging),  1, 0),
+    Regimen_Line_NA= ifelse(is.na(Regimen_Line),  1, 0),
+    HIV_disclosure_NA= ifelse(is.na(HIV_disclosure),  1, 0),
+    CD4_NA= ifelse(is.na(CD4), 1, 0),
+    Viral_Load_log10_NA= ifelse(is.na(Viral_Load_log10), 1, 0),
+    #Days_to_Start_of_ART_NA= ifelse(is.na(Days_to_Start_of_ART),  1, 0), #REMOVED in V3
+    Adherence_Counselling_Sessions_NA = ifelse(is.na(Adherence_Counselling_Sessions),  1, 0),
+    Days_defaulted_in_prev_enc_NA= ifelse(is.na(Days_defaulted_in_prev_enc), 1, 0),
+    num_2wks_defaults_last_3visits_NA= ifelse(is.na(num_2wks_defaults_last_3visits), 1, 0),
+    ever_defaulted_by_1m_in_last_1year_NA= ifelse(is.na(ever_defaulted_by_1m_in_last_1year), 1, 0),
+    ever_defaulted_by_1m_in_last_2year_NA= ifelse(is.na(ever_defaulted_by_1m_in_last_2year), 1, 0),
+    
+    # Set NA to a fixed value (usually zero)
+    Age= ifelse(is.na(Age), 0, Age),
+    Duration_in_HIV_care= ifelse(is.na(Duration_in_HIV_care), 0, Duration_in_HIV_care),
+    Weight= ifelse(is.na(Weight), 0, Weight),
+    Height= ifelse(is.na(Height),0, Height),
+    BMI= ifelse(is.na(BMI),0, BMI),
+    WHO_staging= ifelse(is.na(WHO_staging), 0, WHO_staging),
+    Regimen_Line= ifelse(is.na(Regimen_Line), 0, Regimen_Line),
+    HIV_disclosure= ifelse(is.na(HIV_disclosure), 0, HIV_disclosure),
+    CD4= ifelse(is.na(CD4),0, CD4),
+    Viral_Load_log10= ifelse(is.na(Viral_Load_log10), log10(1), Viral_Load_log10),
+    #Days_to_Start_of_ART= ifelse(is.na(Days_to_Start_of_ART), 0, Days_to_Start_of_ART),  #REMOVED in V3
+    Adherence_Counselling_Sessions_NA= ifelse(is.na(Adherence_Counselling_Sessions), 0, Adherence_Counselling_Sessions),
+    Days_defaulted_in_prev_enc= ifelse(is.na(Days_defaulted_in_prev_enc),0, Days_defaulted_in_prev_enc),
+    num_2wks_defaults_last_3visits= ifelse(is.na(num_2wks_defaults_last_3visits),0, num_2wks_defaults_last_3visits),
+    ever_defaulted_by_1m_in_last_1year= ifelse(is.na(ever_defaulted_by_1m_in_last_1year),0,ever_defaulted_by_1m_in_last_1year),
+    ever_defaulted_by_1m_in_last_2year= ifelse(is.na(ever_defaulted_by_1m_in_last_2year),0, ever_defaulted_by_1m_in_last_2year)
+   
+  )
+
+```
+
+
+
+### Select only relevant predictors and response variable (y0)
+
+
+```{r fig.align='center',warning=FALSE, cache=F, echo=T}
+y='y0' # response variable
+
+# predictors
+x=c(    'Age','Age_NA', 
+        'Gender' ,  
+        'Marital_status', 
+        'Duration_in_HIV_care', 'Duration_in_HIV_care_NA',  
+        'BMI', 'BMI_NA',
+        'Travel_time',  
+        #'Days_to_Start_of_ART', 'Days_to_Start_of_ART_NA', 
+        'WHO_staging','WHO_staging_NA',
+        'Viral_Load_log10', 'Viral_Load_log10_NA', 'VL_suppression', 'Days_Since_Last_VL',
+        'HIV_disclosure','HIV_disclosure_NA', 
+        'Regimen_Line', 'Regimen_Line_NA',  
+        'Pregnancy',
+        'Clinic_Location',
+        'TB_Comorbidity',
+        'CD4','CD4_NA', 'Days_Since_Last_CD4',
+        'Entry_Point', 
+        "Encounter_Type_Class",
+         'Education_Level',  
+        "Occupation",
+       # "Presence_of_OIs", 
+        "Adherence_Counselling_Sessions",
+        "Clinic_Name", 
+        'ART_regimen',
+        'Visit_Number', 
+        'Days_defaulted_in_prev_enc', 'Days_defaulted_in_prev_enc_NA',
+         'num_2wks_defaults_last_3visits', 'num_2wks_defaults_last_3visits_NA',
+        'ever_defaulted_by_1m_in_last_1year','ever_defaulted_by_1m_in_last_1year_NA',
+         'ever_defaulted_by_1m_in_last_2year','ever_defaulted_by_1m_in_last_2year_NA',
+        
+        # Baseline => Added in V3
+        'Age_baseline',
+        'Gender_baseline' ,  
+        'Marital_status_baseline', 
+        'BMI_baseline',
+        'Travel_time_baseline',  
+        'WHO_staging_baseline',
+        'VL_suppression_baseline', 
+        'Viral_Load_log10_baseline',
+        'HIV_disclosure_baseline',
+        'Regimen_Line_baseline', 
+        'Pregnancy_baseline',
+        'Clinic_Location_baseline',
+        'TB_Comorbidity_baseline',
+        'CD4_baseline',
+        'Education_Level_baseline',  
+        "Occupation_baseline",
+       # "Presence_of_OIs_baseline", 
+        "Adherence_Counselling_Sessions_baseline",
+        "Clinic_Name_baseline", 
+        'ART_regimen_baseline'
+)
+
+
+# Convert to h2o_frame
+h2o_frame <- main.df%>%
+                select(c(y,x))%>%
+                filter(!is.na(`y0` ))%>% # TODO: NOTE, please DELETE this line in PRODUCTION
+                as.h2o()
+
+test <- h2o.assign(h2o_frame,key = "test")
+print(dim(test[[2]]))
+
+```
+
+
+
+
+## Step 4: Load the Model into the H2O cluster:
+
+```{r fig.align='center',warning=FALSE, cache=F, echo=T}
+ml_model <- h2o.loadModel("model/V4 - 1Day Default Prediction/1_StackedEnsemble_BestOfFamily_1_day_default_prediction")
+ml_model
+```
+
+
+
+## Step 5: Use the ML Model to Make Predictions:
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+
+h2o.predict(ml_model, test) %>% as.data.frame()
+
+
+
+```
+
+
+
+# Appendix
+
+If you have your actuals
+
+#### Disengagement rate for top 20 % of the predicted probability
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+pred_actual = as_data_frame(
+  list(
+    `Predicted_probability` = h2o.predict(ml_model, test) %>% as.data.frame() %>% pull(Disengaged),
+    `Predicted_class`  = h2o.predict(ml_model, test) %>% as.data.frame() %>% pull(Disengaged),
+    Actual = test %>% as.data.frame() %>% pull(y0) # DELETE THIS Property in PRODUCTION
+    )
+)
+
+pred_actual %>% #group_by(Actual) %>% 
+  arrange(desc(Predicted_probability)) %>% 
+  filter(Predicted_probability > quantile(Predicted_probability, .80))%>%
+  group_by(`Actual`)%>%count()%>%
+  mutate(Basis=`Actual`)%>%
+  hchart("pie",innerSize="50%",hcaes(Basis, `n`)) %>% 
+    hc_tooltip(formatter = JS("function(){
+                                return  '<b>' + this.point.Basis+ ' : </b>( Frequency:' +this.y+', Percentage: '+Highcharts.numberFormat(this.percentage)+'%)'
+  }"),useHTML = FALSE)%>%hc_plotOptions(pie =list(dataLabels = list(enabled = TRUE,format="{point.Basis}: {point.y} ({point.percentage:.2f}%)")))%>%
+   hc_legend(align = "left", verticalAlign = "top",
+            layout = "vertical", x = 0, y = 100) 
+
+```
+
+#### Disengagement rate for top 15 % of the predicted probability
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+pred_actual %>% #group_by(Actual) %>% 
+  arrange(desc(Predicted_probability)) %>% 
+  filter(Predicted_probability > quantile(Predicted_probability, .85))%>%
+  group_by(`Actual`)%>%count()%>%
+  mutate(Basis=`Actual`)%>%
+  hchart("pie",innerSize="50%",hcaes(Basis, `n`)) %>% 
+    hc_tooltip(formatter = JS("function(){
+                                return  '<b>' + this.point.Basis+ ' : </b>( Frequency:' +this.y+', Percentage: '+Highcharts.numberFormat(this.percentage)+'%)'
+  }"),useHTML = FALSE)%>%hc_plotOptions(pie =list(dataLabels = list(enabled = TRUE,format="{point.Basis}: {point.y} ({point.percentage:.2f}%)")))%>%
+   hc_legend(align = "left", verticalAlign = "top",
+            layout = "vertical", x = 0, y = 100) 
+
+```
+
+
+#### Disengagement rate for top 10 % of the predicted probability
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+pred_actual %>% #group_by(Actual) %>% 
+  arrange(desc(Predicted_probability)) %>% 
+  filter(Predicted_probability > quantile(Predicted_probability, .90))%>%
+  group_by(`Actual`)%>%count()%>%
+  mutate(Basis=`Actual`)%>%
+  hchart("pie",innerSize="50%",hcaes(Basis, `n`)) %>% 
+    hc_tooltip(formatter = JS("function(){
+                                return  '<b>' + this.point.Basis+ ' : </b>( Frequency:' +this.y+', Percentage: '+Highcharts.numberFormat(this.percentage)+'%)'
+  }"),useHTML = FALSE)%>%hc_plotOptions(pie =list(dataLabels = list(enabled = TRUE,format="{point.Basis}: {point.y} ({point.percentage:.2f}%)")))%>%
+   hc_legend(align = "left", verticalAlign = "top",
+            layout = "vertical", x = 0, y = 100) 
+
+```
+
+
+
+
+
+
+
+
