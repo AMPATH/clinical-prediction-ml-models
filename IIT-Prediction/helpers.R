@@ -183,12 +183,14 @@ clean_longitudinal_data = function(df){
       `disengagement-2wks` = factor(if_else(`Days defaulted` > 14, "Disengaged",  "Active In Care")),
       `disengagement-1month` =  factor(if_else(`Days defaulted` > 30, "Disengaged",  "Active In Care")),
       `disengagement-3month` =  factor(if_else(`Days defaulted` > 90, "Disengaged",  "Active In Care")),
+      `disengagement-7days` =  factor(if_else(`Days defaulted` > 7, "Disengaged",  "Active In Care")),
       
       # Binary version of the response variable
       `disengagement-1day_bin`  = ifelse(`disengagement-1day` == "Disengaged", TRUE, FALSE),
       `disengagement-2wks_bin`  = ifelse(`disengagement-2wks` == "Disengaged", TRUE, FALSE),
       `disengagement-1month_bin`  = ifelse(`disengagement-1month` == "Disengaged", TRUE, FALSE),
       `disengagement-3month_bin`  = ifelse(`disengagement-3month` == "Disengaged", TRUE, FALSE),
+      `disengagement-7days`  = ifelse(`disengagement-7days` == "Disengaged", TRUE, FALSE),
       
       # Number of days defaulted in the previous encounters
       Days_defaulted_in_prev_enc = as.numeric(lag(`Days defaulted`, order_by =Encounter_ID)),
@@ -260,6 +262,7 @@ clean_longitudinal_data = function(df){
       y1=as.factor(`disengagement-2wks`),
       y2=as.factor(`disengagement-1month`), # This is the main reponse that was used to train the models
       y3=as.factor(`disengagement-3month`),
+      y4=as.factor(`disengagement-7days`),
     ) %>%
     mutate( # V3: Remove Outliers
       
