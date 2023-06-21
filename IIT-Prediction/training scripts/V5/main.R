@@ -207,12 +207,12 @@ x=c(    'Age','Age_NA',
 
 # Experimentation
 hyper_parameters = list(
-  max_models=2,#200 #10
-  stopping_rounds = 3,#15 #10
-  stopping_tolerance = 0.01,#0.0000001#0.0001 #0.02
+  max_models=20,#200 #10
+  stopping_rounds = 5,#15 #10
+  stopping_tolerance = 0.001,#0.0000001#0.0001 #0.02
   fold_column <- "fold_id",
   k_folds = k_folds,
-  max_runtime_mins = 3,#22000000#80
+  max_runtime_mins = 60,#22000000#80
   balance_classes = F, # false by default
   include_algos= c(
     "XGBoost",#"XRF",
