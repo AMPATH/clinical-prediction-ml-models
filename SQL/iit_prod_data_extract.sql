@@ -41,15 +41,33 @@ select
     if(p.birthdate is null, 1, 0) as Age_NA,
     p.gender as Gender,
     null as Marital_status,
-    timestampdiff(YEAR,
-                  if(year(fs.arv_first_regimen_start_date) != 1900,
-                     date(fs.arv_first_regimen_start_date),
-                     NULL
-                      ), date(fs.encounter_datetime)) as Duration_in_HIV_care,
+    timestampdiff(year,
+        if(year(fs.arv_first_regimen_start_date) != 1900,
+            date(fs.arv_first_regimen_start_date),
+            null
+        ),
+        date(fs.encounter_datetime)
+    ) as Duration_in_HIV_care,
     if(fs.arv_first_regimen_start_date is null or year(fs.arv_first_regimen_start_date) = 1900,
        1, 0) as Duration_in_HIV_care_NA,
-    round(fs.weight / ((fs.height / 100) * (fs.height / 100)), 2) as BMI,
-    if(fs.weight is null or fs.height is null or fs.weight < 1 or fs.height < 1, 1, 0) as BMI_NA,
+    case
+        when fs.weight is null or fs.height is null or fs.weight < 1 or fs.height < 1
+            then null
+        when round(fs.weight / ((fs.height / 100) * (fs.height / 100)), 2) < 5.0
+            then null
+        when round(fs.weight / ((fs.height / 100) * (fs.height / 100)), 2) > 60.0
+            then null
+        else round(fs.weight / ((fs.height / 100) * (fs.height / 100)), 2)
+    end as BMI,
+    case
+        when fs.weight is null or fs.height is null or fs.weight < 1 or fs.height < 1
+            then 1
+        when round(fs.weight / ((fs.height / 100) * (fs.height / 100)), 2) < 5.0
+            then 1
+        when round(fs.weight / ((fs.height / 100) * (fs.height / 100)), 2) > 60.0
+            then 1
+        else 0
+    end as BMI_NA,
     null as Travel_time,
     fs.cur_who_stage as WHO_staging,
     if(fs.cur_who_stage is null, 1, 0) as WHO_staging_NA,
@@ -149,9 +167,9 @@ where fs.location_id in (26,23,319,130,313,9,78,310,20,312,12,321,8,341,65,314,6
   -- 9999 - transfered to non-AMPATH clinic, we discount these for the list of patient's that we care about trying to
   -- proactively follow-up on since we do not anticipate these patient's returning to AMPATH. If they do, they will be
   -- returned to normal status at whatever clinic they visit
-  and fs.transfer_in_location_id != 9999
+  and (fs.transfer_in_location_id is null or fs.transfer_in_location_id != 9999)
   and fs.rtc_date between ?startDate and ?endDate
-  -- allow this query to handle retrospective predictions
+  -- for retrospective data
   and encounter_datetime < fs.date_created
   and (next_clinical_datetime_hiv >= fs.date_created
-    or next_clinical_datetime_hiv is null)
+    or next_clinical_datetime_hiv is null);
