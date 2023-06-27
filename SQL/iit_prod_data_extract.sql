@@ -101,7 +101,7 @@ select
     null as Occupation,
     null as Adherence_Counselling_Sessions,
     l.name as Clinic_Name,
-    replace(get_arv_names(fs.cur_arv_meds), '##', '+') as ART_regimen,
+    replace(etl.get_arv_names(fs.cur_arv_meds), '##', '+') as ART_regimen,
     dd.visit_number as Visit_Number,
     days_defaulted_last_encounter as Days_defaulted_in_prev_enc,
     if(days_defaulted_last_encounter is null, 1, 0) as Days_defaulted_in_prev_enc_NA,
@@ -156,6 +156,8 @@ from flat_hiv_summary_v15b as fs
         where encounter_date between date_sub('2023-06-19', interval 2 year) and '2023-06-19'
         group by person_id
     ) as 2yr on 2yr.person_id = fs.person_id
+    left join predictions.ml_weekly_predictions mlp
+        on mlp.encounter_id = fs.encounter_id
 where fs.location_id in (26,23,319,130,313,9,78,310,20,312,12,321,8,341,65,314,64,83,90,106,86,336,91,320,74,76,79,100,311,75)
   -- test locations
   and fs.location_id not in (195, 429, 430, 354)
@@ -172,4 +174,5 @@ where fs.location_id in (26,23,319,130,313,9,78,310,20,312,12,321,8,341,65,314,6
   -- for retrospective data
   and encounter_datetime < fs.date_created
   and (next_clinical_datetime_hiv >= fs.date_created
-    or next_clinical_datetime_hiv is null);
+    or next_clinical_datetime_hiv is null)
+  and mlp.encounter_id is null;
