@@ -88,13 +88,14 @@ function(
   # same deal, but get end the week (always Sunday)
   week_end <- week_end(clock::add_weeks(week_start, as.integer(weeks)))
 
-
   query <- DBI::sqlInterpolate(
     my_pool,
     ml_sql,
     startDate = week_start,
     endDate = week_end
   )
+
+  predictors <- DBI::dbGetQuery(my_pool, query)
 
   h2o_predict_frame <- predictors %>% as.h2o()
 
