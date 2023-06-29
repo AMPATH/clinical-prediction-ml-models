@@ -1,0 +1,1 @@
+35 3 * * * /app/run_predictions.sh
