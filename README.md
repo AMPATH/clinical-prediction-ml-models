@@ -9,13 +9,13 @@ To build the Docker image, first create a `config.yml` using the file in the `do
 
 
 ```
-docker build --tag kenya-prediction-<model_version>:<version> .
+docker build --tag ampath-iit-prediction-model-<model_version>:<version> .
 ```
 
 And run it locally:
 
 ```
-docker run --rm -p 8000:8000 -v "$(pwd)/docker-resources/config.yml:/app/config.yml:ro" kenya-prediction-<model_version>:<version>
+docker run --rm -p 8000:8000 -v "$(pwd)/docker-resources/config.yml:/app/config.yml:ro" ampath-iit-prediction-model-<model_version>:<version>
 ```
 
 ## The API
