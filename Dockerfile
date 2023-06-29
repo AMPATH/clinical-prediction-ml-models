@@ -1,5 +1,7 @@
 FROM rstudio/plumber:latest
 
+ENV TZ "Africa/Nairobi"
+
 RUN apt-get update && apt-get install -y \
 	tini \
 	libmariadb-dev \
@@ -20,7 +22,7 @@ RUN install2.r --error --skipinstalled \
 
 RUN Rscript -e "remotes::install_version('h2o', '3.36.1.2')"
 
-COPY IIT-Prediction/model/V4 /app/model
+COPY IIT-Prediction/model/V5 /app/model
 COPY SQL/iit_prod_data_extract.sql /app/iit_prod_data_extract.sql
 COPY docker-resources/plumber.R /app/plumber.R
 
