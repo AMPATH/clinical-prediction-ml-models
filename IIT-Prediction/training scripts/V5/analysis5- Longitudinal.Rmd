@@ -1,0 +1,336 @@
+---
+title: "HIV Retention & Disengagement Prediction"
+author: "USAID | ADAT "
+date: "May 20, 2022"
+output:
+  html_document:
+    toc: true
+    toc_depth: 5
+    number_sections: false
+---
+
+
+
+# Premise
+
+Despite the progress in HIV care in suppressing viral load, disengagement from HIV care remains a significant issue that impairs the 
+path of achieving the global target to end the HIV/AIDS epidemic by 2030, set forth by WHO and the Joint United Nations Programme on HIV/AIDS (UNAIDS). In light of the above, we sought to develop and validate data-driven / AI rules than can be used to foster the early identification of patients at risk of disengagement from care.
+
+# Objective 
+
+> The main objective of this study is to predict disengagement by one month denoted by y_2. 
+
+# Training & Validation of Models
+
+We leveraged Super Learner (Stacked Ensamble) algorithm to train and validated ML models. The details of implementation can be found here:
+
+https://rpubs.com/akimaina/hiv-disengagement-prediction
+
+
+
+# Step 1: Install / Load Relevant Packages
+
+```{r fig.align='center',warning=FALSE, cache=F, echo=T}
+
+
+# function to install missing packages
+ipak <- function(pkg){
+  new.pkg <- pkg[!(pkg %in% installed.packages()[, "Package"])]
+  if (length(new.pkg))
+    install.packages(new.pkg, dependencies = TRUE, repos='http://cran.rstudio.com/')
+  sapply(pkg, require, character.only = TRUE)
+}
+
+#install.packages('package_name', dependencies=TRUE, repos='http://cran.rstudio.com/')
+
+packages =c(  "dplyr", "tidyverse", "highcharter", "zoo", "runner", "readr", "h2o")
+
+ipak(packages)
+
+select = dplyr::select; summarize = dplyr::summarize; rename = dplyr::rename; mutate = dplyr::mutate;
+
+```
+
+‘h2o’ version 3.36.1.2 was used
+
+# Step 2: Intialize H2o Cluster & load helper function
+
+
+```{r fig.align='center',warning=FALSE, cache=F, echo=T}
+
+# Set seed
+set.seed(123)
+
+# init h20
+h2o.init( ip = "localhost", port = 7070, max_mem_size = "16G", nthreads = -1)
+
+# Load helper functions
+source("helpers.R") #
+
+```
+
+# Step 3. Data Pre-processing
+
+
+
+```{r fig.align='center', cache=T, fig.width=10, warning=FALSE}
+raw.df =  readr::read_csv("../../data/synthetic_data_mimics_output_of_SQL_query.csv", na = "NULL")
+k_folds=6 # please not that the last fold will be used as a proxy for external validation set
+clean.long.df = clean_longitudinal_data(raw.df)
+clean.df= clean.long.df %>%
+    filter(Enrollment_Date >= as.Date("2016-01-01") & RTC_Date <= as.Date("2023-01-01")) %>%
+    assign_folds(k_folds) #%>% group_by(patientID) %>% arrange( patientID, desc(Visit_Number)) %>% filter(row_number()==4)%>%ungroup() 
+```
+
+
+
+# Step 4. Handle Missing Data 
+ 
+```{r fig.align='center',warning=FALSE, cache=F, echo=T}
+sigma=1
+# Handle Missing Data
+model.df = clean.df%>%
+  mutate(
+    #Patient_Care_Status=as.factor(Patient_Care_Status),
+    y0=as.factor(`disengagement-1day`),
+    y0_weight = if_else(y0=='Disengaged', (sum(clean.df[,"disengagement-1day"] == 'Active In Care', na.rm=T) / nrow(clean.df))*sigma,
+                        1-sum(clean.df[,"disengagement-1day"] == 'Active In Care', na.rm=T) / nrow(clean.df)),
+    y1=as.factor(`disengagement-2wks`),
+    y1_weight = if_else(y1=='Disengaged', (sum(clean.df[,"disengagement-2wks"] == 'Active In Care', na.rm=T) / nrow(clean.df))*sigma,
+                        1-sum(clean.df[,"disengagement-2wks"] == 'Active In Care', na.rm=T) / nrow(clean.df)),
+    
+    y2=as.factor(`disengagement-1month`),
+    y2_weight = if_else(y2=='Disengaged', (sum(clean.df[,"disengagement-1month"] == 'Active In Care', na.rm=T) / nrow(clean.df))*sigma,
+                        1-sum(clean.df[,"disengagement-1month"] == 'Active In Care', na.rm=T) / nrow(clean.df)),
+    y3=as.factor(`disengagement-3month`),
+    y3_weight = if_else(y3=='Disengaged', (sum(clean.df[,"disengagement-3month"] == 'Active In Care', na.rm=T) / nrow(clean.df))*sigma,
+                        1-sum(clean.df[,"disengagement-3month"] == 'Active In Care', na.rm=T) / nrow(clean.df)),
+    
+    y4=as.factor(`disengagement-7days`),
+    y4_weight = if_else(y4=='Disengaged', (sum(clean.df[,"disengagement-7days"] == 'Active In Care', na.rm=T) / nrow(clean.df))*sigma,
+                        1-sum(clean.df[,"disengagement-7days"] == 'Active In Care', na.rm=T) / nrow(clean.df))
+  )%>%
+  mutate(
+    
+    # Add missing Data Indicators
+    Age_NA= ifelse(is.na(Age), 1, 0),
+    Duration_in_HIV_care_NA= ifelse(is.na(Duration_in_HIV_care),  1, 0),
+    Weight_NA= ifelse(is.na(Weight), 1, 0),
+    Height_NA= ifelse(is.na(Height), 1, 0),
+    BMI_NA= ifelse(is.na(BMI), 1, 0),
+    WHO_staging_NA= ifelse(is.na(WHO_staging),  1, 0),
+    Regimen_Line_NA= ifelse(is.na(Regimen_Line),  1, 0),
+    HIV_disclosure_NA= ifelse(is.na(HIV_disclosure),  1, 0),
+    CD4_NA= ifelse(is.na(CD4), 1, 0),
+    Viral_Load_log10_NA= ifelse(is.na(Viral_Load_log10), 1, 0),
+    #Days_to_Start_of_ART_NA= ifelse(is.na(Days_to_Start_of_ART),  1, 0), #REMOVED
+    Adherence_Counselling_Sessions_NA = ifelse(is.na(Adherence_Counselling_Sessions),  1, 0),
+    Days_defaulted_in_prev_enc_NA= ifelse(is.na(Days_defaulted_in_prev_enc), 1, 0),
+    num_2wks_defaults_last_3visits_NA= ifelse(is.na(num_2wks_defaults_last_3visits), 1, 0),
+    ever_defaulted_by_1m_in_last_1year_NA= ifelse(is.na(ever_defaulted_by_1m_in_last_1year), 1, 0),
+    ever_defaulted_by_1m_in_last_2year_NA= ifelse(is.na(ever_defaulted_by_1m_in_last_2year), 1, 0),
+    
+    # Set NA to a fixed value (usually zero)
+    Age= ifelse(is.na(Age), 0, Age),
+    Duration_in_HIV_care= ifelse(is.na(Duration_in_HIV_care), 0, Duration_in_HIV_care),
+    Weight= ifelse(is.na(Weight), 0, Weight),
+    Height= ifelse(is.na(Height),0, Height),
+    BMI= ifelse(is.na(BMI),0, BMI),
+    WHO_staging= ifelse(is.na(WHO_staging), 0, WHO_staging),
+    Regimen_Line= ifelse(is.na(Regimen_Line), 0, Regimen_Line),
+    HIV_disclosure= ifelse(is.na(HIV_disclosure), 0, HIV_disclosure),
+    CD4= ifelse(is.na(CD4),0, CD4),
+    Viral_Load_log10= ifelse(is.na(Viral_Load_log10), log10(1), Viral_Load_log10),
+    #Days_to_Start_of_ART= ifelse(is.na(Days_to_Start_of_ART), 0, Days_to_Start_of_ART),  #REMOVED
+    Adherence_Counselling_Sessions_NA= ifelse(is.na(Adherence_Counselling_Sessions), 0, Adherence_Counselling_Sessions),
+    Days_defaulted_in_prev_enc= ifelse(is.na(Days_defaulted_in_prev_enc),0, Days_defaulted_in_prev_enc),
+    num_2wks_defaults_last_3visits= ifelse(is.na(num_2wks_defaults_last_3visits),0, num_2wks_defaults_last_3visits),
+    ever_defaulted_by_1m_in_last_1year= ifelse(is.na(ever_defaulted_by_1m_in_last_1year),0,ever_defaulted_by_1m_in_last_1year),
+    ever_defaulted_by_1m_in_last_2year= ifelse(is.na(ever_defaulted_by_1m_in_last_2year),0, ever_defaulted_by_1m_in_last_2year)
+   
+    
+  )
+
+```
+
+
+
+# Step 5. Define Predictors
+
+
+```{r fig.align='center',warning=FALSE, cache=F, echo=T}
+
+# predictors
+x=c(    'Age','Age_NA', 
+        'Gender' ,  
+        'Marital_status', 
+        'Duration_in_HIV_care', 'Duration_in_HIV_care_NA',  
+        'BMI', 'BMI_NA',
+        'Travel_time',  
+        #'Days_to_Start_of_ART', 'Days_to_Start_of_ART_NA', 
+        'WHO_staging','WHO_staging_NA',
+        'Viral_Load_log10', 'Viral_Load_log10_NA', 'VL_suppression', 'Days_Since_Last_VL',
+        'HIV_disclosure','HIV_disclosure_NA', 
+        'Regimen_Line', 'Regimen_Line_NA',  
+        'Pregnancy',
+        'Clinic_Location',
+        'TB_Comorbidity',
+        'CD4','CD4_NA', 'Days_Since_Last_CD4',
+        'Entry_Point', 
+        "Encounter_Type_Class",
+         'Education_Level',  
+        "Occupation",
+       # "Presence_of_OIs", 
+        "Adherence_Counselling_Sessions",
+        "Clinic_Name", 
+        'ART_regimen',
+        'Visit_Number', 
+        'Days_defaulted_in_prev_enc', 'Days_defaulted_in_prev_enc_NA',
+         'num_2wks_defaults_last_3visits', 'num_2wks_defaults_last_3visits_NA',
+        'ever_defaulted_by_1m_in_last_1year','ever_defaulted_by_1m_in_last_1year_NA',
+         'ever_defaulted_by_1m_in_last_2year','ever_defaulted_by_1m_in_last_2year_NA',
+        
+        # Baseline => Added in V3
+        'Age_baseline',
+        'Gender_baseline' ,  
+        'Marital_status_baseline', 
+        'BMI_baseline',
+        'Travel_time_baseline',  
+        'WHO_staging_baseline',
+        'VL_suppression_baseline', 
+        'Viral_Load_log10_baseline',
+        'HIV_disclosure_baseline',
+        'Regimen_Line_baseline', 
+        'Pregnancy_baseline',
+        'Clinic_Location_baseline',
+        'TB_Comorbidity_baseline',
+        'CD4_baseline',
+        'Education_Level_baseline',  
+        "Occupation_baseline",
+       # "Presence_of_OIs_baseline", 
+        "Adherence_Counselling_Sessions_baseline",
+        "Clinic_Name_baseline", 
+        'ART_regimen_baseline'
+)
+
+```
+
+
+ 
+
+# Step 6. Define ML algorithm & Hyper-parameter tuning
+
+```{r fig.align='center', fig.width=6, warning=FALSE, cache=F, results='hide', echo=T}
+
+# Experimentation
+hyper_parameters = list(
+    max_models=2,#200 #10
+    stopping_rounds = 3,#15 #10
+    stopping_tolerance = 0.01,#0.0000001#0.0001 #0.02
+    fold_column <- "fold_id",
+    k_folds = k_folds,
+    max_runtime_mins = 3,#22000000#80
+    balance_classes = F, # false by default
+    include_algos= c(
+      "XGBoost",#"XRF",
+      "StackedEnsemble",  "GLM",
+    "GBM"
+    
+     ),
+    stopping_metric="logloss",
+    sort_metric="auc",
+    assignment_type="stratified",
+    verbosity= NA
+    
+)
+  
+```
+
+
+
+
+# 1 day Disengagement | Weighted
+
+## Train the model
+```{r fig.align='center',warning=FALSE, cache=F}
+y='y0'
+weights_column = 'y0_weight'
+export_path = "training scripts/V5/exports/y0_1days_IIT"
+autoML.y0 <- train_ml_model(model.df, y, x, hyper_parameters, export_path)
+```
+
+
+## Test the model
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+
+evaluate_ml_model(main.df, y, x, hyper_parameters, autoML.y0)
+
+```
+
+
+
+
+
+
+
+
+
+
+# 7 day Disengagement | Weighted
+
+## Train the model
+ 
+```{r fig.align='center',warning=FALSE, cache=F}
+y='y4'
+x = c(x)
+weights_column = 'y4_weight'
+export_path = "training scripts/V5/exports/y4_7days_IIT"
+autoML.y4 <- train_ml_model(model.df, y, x, hyper_parameters, export_path)
+
+```
+
+
+
+
+
+
+## Test the model
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+
+evaluate_ml_model(main.df, y, x, hyper_parameters, autoML.y4)
+
+```
+
+
+
+
+
+# 90 day Disengagement | Weighted
+
+## Train the model
+
+```{r fig.align='center',warning=FALSE, cache=F}
+y='y3'
+weights_column = 'y3_weight'
+export_path = "training scripts/V5/exports/y3_90days_IIT"
+autoML.y3 <- train_ml_model(model.df, y, x, hyper_parameters, export_path)
+
+```
+
+## Test the model
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+
+evaluate_ml_model(main.df, y, x, hyper_parameters, autoML.y4)
+
+```
+
+
+
+
+
+
+
+
