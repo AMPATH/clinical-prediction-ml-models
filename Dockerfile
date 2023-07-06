@@ -28,7 +28,7 @@ COPY docker-resources/crontab /etc/cron.d/crontab
 COPY IIT-Prediction/model/V5 /app/model
 COPY SQL/iit_prod_data_extract.sql /app/iit_prod_data_extract.sql
 COPY docker-resources/run_predictions.sh /app/run_predictions.sh
-RUN chmod +X /app/run_predictions.sh
+RUN chmod +x /app/run_predictions.sh
 COPY docker-resources/plumber.R /app/plumber.R
 
 EXPOSE 8000

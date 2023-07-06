@@ -160,9 +160,9 @@ from flat_hiv_summary_v15b as fs
     left join predictions.ml_weekly_predictions mlp
         on mlp.encounter_id = fs.encounter_id
 -- filtered to Dumisha clinics only, for now
-where fs.location_id in (26,23,319,130,313,9,78,310,20,312,12,321,8,341,65,314,64,83,90,106,86,336,91,320,74,76,79,100,311,75)
+where fs.location_id in (26,23,319,130,313,9,78,310,20,312,12,321,8,341,65,314,64,83,90,106,86,336,91,320,74,76,79,100,311,75,195)
   -- test locations
-  and fs.location_id not in (195, 429, 430, 354)
+  and fs.location_id not in (429, 430, 354)
   -- filter encounters: 111 - LabResult, 99999 - lab encounter type
   -- these encounters are post-visit lab result entries and should not appear in predicted data
   and fs.encounter_type not in (111, 99999)

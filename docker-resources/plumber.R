@@ -66,12 +66,12 @@ cors <- function(req, res) {
 #* @post /predict
 function(
   startDate = clock::add_weeks(Sys.Date(), 1),
-  weeks = "0"
+  weeks = "1"
 ) {
   # handle parameters
   # despite typings, the arguments are always strings
   start_date <- as.Date(startDate)
-  num_weeks <- max(as.integer(weeks), 0)
+  num_weeks <- max(as.integer(weeks) - 1, 0)
 
   # calculate the Monday for this week; this is our start date
   start_of_week <- week_start(start_date)
