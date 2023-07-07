@@ -213,6 +213,7 @@ predict_risk <- function(.data, cohort) {
         .default = NA_character_
       ),
     .keep = "all"
-  ) 
+  ) %>%
+  select(-c(percentile))
 }
 
