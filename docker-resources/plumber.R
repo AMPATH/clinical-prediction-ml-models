@@ -96,7 +96,7 @@ function(
 
   # convert the dataframe to an h2o object, removing elements that are not predictors
   h2o_predict_frame <- predictors %>%
-    select(-c(person_id, encounter_id, location_id, rtc_date)) %>%
+    select(-c(person_id, encounter_id, location_id)) %>%
     as.h2o()
 
   # run the predictions
