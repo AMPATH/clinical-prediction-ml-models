@@ -2,7 +2,7 @@ FROM rstudio/plumber:latest
 
 ENV TZ "Africa/Nairobi"
 
-RUN apt-get update && apt-get install -y \
+RUN apt-get -y update && apt-get -y install \
 	tini \
 	libmariadb-dev \
 	libmysqlclient21 \
@@ -29,10 +29,12 @@ COPY IIT-Prediction/model/V5 /app/model
 COPY SQL/iit_prod_data_extract.sql /app/iit_prod_data_extract.sql
 COPY docker-resources/run_predictions.sh /app/run_predictions.sh
 RUN chmod +x /app/run_predictions.sh
+COPY docker-resources/docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
 COPY docker-resources/plumber.R /app/plumber.R
 
 EXPOSE 8000
 
-ENTRYPOINT ["tini", "--", "R", "-e", "pr <- plumber::plumb(rev(commandArgs())[1]); args <- list(host = '0.0.0.0', port = 8000); if (packageVersion('plumber') >= '1.0.0') { pr$setDocs(TRUE) } else { args$swagger <- TRUE }; do.call(pr$run, args)"]
+ENTRYPOINT ["tini", "--", "./docker-entrypoint.sh"]
 
 CMD ["/app/plumber.R"]
