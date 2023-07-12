@@ -172,15 +172,6 @@ where fs.location_id in (26,23,319,130,313,9,78,310,20,312,12,321,8,341,65,314,6
   -- proactively follow-up on since we do not anticipate these patient's returning to AMPATH. If they do, they will be
   -- returned to normal status at whatever clinic they visit
   and (fs.transfer_in_location_id is null or fs.transfer_in_location_id != 9999)
-  -- only include drug pickups if a return visit is not also scheduled for the same day
-  and (fs.encounter_type != 186 or not exists (
-    select *
-    from etl.flat_hiv_summary_v15b fs_
-    where fs.person_id = fs_.person_id
-      and fs.rtc_date = fs_.rtc_date
-      and fs_.encounter_type not in (186, 111, 99999)
-      and fs_.is_clinical_encounter = 1
-  ))
   and fs.is_clinical_encounter = 1
   and fs.rtc_date between ?startDate and ?endDate
   -- for retrospective data
