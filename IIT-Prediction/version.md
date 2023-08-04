@@ -94,7 +94,7 @@ X=c(
       'HIV_disclosure_stage',
       'Clinic_County',
       'Clinic_Name',
-      'Program_Name',     
+      'Program_Name',
       'TB_screening',
       'TB_Test_Result', 
       'On_TB_TX',
