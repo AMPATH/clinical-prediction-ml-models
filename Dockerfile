@@ -22,10 +22,11 @@ RUN install2.r --error --skipinstalled \
 	DBI \
 	&& rm -rf /tmp/downloaded_packages
 
-RUN Rscript -e "remotes::install_version('h2o', '3.36.1.2')"
+RUN Rscript -e "remotes::install_version('h2o', '3.40.0.4')"
 
 COPY docker-resources/crontab /etc/cron.d/crontab
-COPY IIT-Prediction/model/V5 /app/model
+COPY IIT-Prediction/model/V6 /app/model
+RUN find /app/model -name "*.zip" | xargs -P 5 -I fileName sh -c 'unzip -o -d "$(dirname "fileName")" "fileName"'
 COPY SQL/iit_prod_data_extract.sql /app/iit_prod_data_extract.sql
 COPY docker-resources/run_predictions.sh /app/run_predictions.sh
 RUN chmod +x /app/run_predictions.sh

@@ -14,7 +14,7 @@ h2o.init()
 dbConfig <- config::get()
 
 ml_model <- h2o.loadModel(
-  "/app/model/y0_1days_IIT/StackedEnsemble_AllModels_1_AutoML_1_20230615_104136"
+  "/app/model/y0_1days_adult_minor_IIT/2_StackedEnsemble_BestOfFamily_1_AutoML_8_20230726_142520_auc_0.704/StackedEnsemble_BestOfFamily_1_AutoML_8_20230726_142520"
 )
 
 ml_sql <- read_file("/app/iit_prod_data_extract.sql")
@@ -122,7 +122,7 @@ function(
     # add per-row metadata about the run
     mutate(
       prediction_generated_date = Sys.time(),
-      model_version = "V5",
+      model_version = "V6",
       start_date = start_of_week,
       end_date = end_of_week,
       week = clock::date_format(clock::add_weeks(week_start(rtc_date), -1), format="%Y-W%U"),
@@ -130,7 +130,7 @@ function(
     )
 
   # add the rows from the prediction_result to the ml_weekly_predictions table
-  DBI::dbAppendTable(my_pool, SQL('predictions.ml_weekly_predictions'), prediction_result)
+  # DBI::dbAppendTable(my_pool, SQL('predictions.ml_weekly_predictions'), prediction_result)
 
   # return the result so the API returns *something*
   prediction_result

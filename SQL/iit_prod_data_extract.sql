@@ -130,7 +130,18 @@ select
     Occupation_baseline,
     Adherence_Counselling_Sessions_baseline,
     Clinic_Name_baseline,
-    ART_regimen_baseline
+    ART_regimen_baseline,
+    fs.cur_arv_adherence as ART_Adherence,
+    coalesce(fs.hiv_disclosure_status_value, 'Not Done') as HIV_disclosure_stage,
+    l.state_province as Clinic_County,
+    l.name as Clinic_Name,
+    program.name as Program_Name,
+    coalesce(fs.tb_screen, 0) as TB_screening,
+    fs.tb_test_result as TB_Test_Result,
+    fs.on_tb_tx as On_TB_TX,
+    coalesce(fs.on_ipt, 0) as On_IPT,
+    coalesce(fs.ca_cx_screen, 0) as CA_CX_Screening,
+    fs.ca_cx_screening_result as CA_CX_Screening_Result
 from flat_hiv_summary_v15b as fs
     left join predictions.flat_ml_baseline_visit baseline
         on fs.person_id = baseline.person_id
@@ -142,6 +153,11 @@ from flat_hiv_summary_v15b as fs
     left join amrs.location l
         on fs.location_id = l.location_id
             and l.retired = 0
+    left join etl.program_visit_map pvm
+                   on pvm.visit_type_id = fs.visit_type
+    left join amrs.program program
+        on pvm.program_type_id = program.program_id
+            and program.retired = 0
     left join num_2wk_defaults_last_3_visits 2wk_defaults
         on 2wk_defaults.person_id = fs.person_id
             and 2wk_defaults.encounter_id = fs.encounter_id
