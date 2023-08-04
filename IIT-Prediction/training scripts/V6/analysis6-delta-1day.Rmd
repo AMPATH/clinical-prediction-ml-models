@@ -1,0 +1,2425 @@
+---
+title: "HIV Retention & Disengagement Prediction"
+author: "USAID | ADAT "
+date: "July 20, 2023"
+output:
+  rmdformats::readthedown:
+    highlight: pygments
+    toc_depth: 5
+    number_sections: false
+    css: style.css
+  html_document:
+    toc: true
+    toc_depth: 5
+    number_sections: false
+    css: style.css
+---
+
+
+
+```{r setup, include=FALSE}
+options(java.parameters = "-Xmx200g")
+
+knitr::opts_chunk$set(warning=FALSE,
+                      message=FALSE,
+                      echo=F,
+                      cache.lazy = FALSE,
+                      #dpi=96,
+                     # fig.width=7,# fig.height=4, # Default figure widths
+                     # dev="png", #dev.args=list(type="cairo"), # The png device
+                      # Change to dev="postscript" if you want the EPS-files
+                      # for submitting. Also remove the dev.args() as the postscript
+                      # doesn't accept the type="cairo" argument.
+                      error=FALSE)
+
+# Use the table counter that the htmlTable() provides
+options(table_counter = TRUE)
+
+pacman::p_load(breakDown, DALEX, DT, finalfit, h2o, inspectdf, missRanger, skimr, 
+    tidyverse, xray, dplyr,  readxl,Hmisc,Gmisc, magrittr, flextable, MASS, tidyverse, caret, knitr, doParallel,xtable, ggpubr, haven, PerformanceAnalytics, naniar, gridExtra, ggthemes, TSstudio, pacman, readr, lime, highcharter, pROC, gtsummary, nFactors, mctest, car, fabricatr, smd, cvAUC, zoo, runner)
+
+# packages not pubished
+devtools::install_github("kassambara/easyGgplot2")
+library(easyGgplot2)
+
+
+select = dplyr::select; summarize = dplyr::summarize; rename = dplyr::rename; mutate = dplyr::mutate;
+
+
+#AMAZING: https://rpubs.com/muntasir_masum/tableoutput
+# To have a compact table (not necessary if you need a compact table or can be postprocessed)
+set_gtsummary_theme(theme_gtsummary_compact(set_theme = TRUE))
+
+
+
+#h2o.init(ip = 'localhost', port = 7070, nthreads = -1,max_mem_size = "15G")
+
+# HELPER
+to_YesNo <- function(x, na.rm=FALSE) (as.factor(if_else(x==1,"Yes","No")))
+
+flex_outcome= c("stat_1", "stat_2", "stat_3", "stat_4", "stat_5", "stat_6")
+
+h2o.init(bind_to_localhost = F, port = 7070, max_mem_size = "200G",   nthreads = 20)
+# https://docs.h2o.ai/h2o/latest-stable/h2o-docs/automl.html
+h2o.no_progress() # disable progress bar for RMarkdown
+#h2o.removeAll()  # Optional: remove anything from previous session
+#h2o.shutdown(prompt = F)
+
+```
+
+
+<style type="text/css">
+/* Three image containers (use 25% for four, and 50% for two, etc) */
+.column {
+  float: left;
+  width: 33.33%;
+  padding: 5px;
+}
+
+/* Clear floats after image containers */
+.row::after {
+  content: "";
+  clear: both;
+  display: table;
+}
+
+body {
+background:white !important;
+}
+
+
+
+</style>
+         
+<center>
+
+<h2>
+
+Retention / Disengagement Predicition Summary Statistics
+
+</h2>
+<span>
+
+Contributing Investigators and Practitioners:
+
+USAID, Brown University, Moi University & AMPATH
+
+
+</span>
+
+</center>
+
+```{r}
+currentTime <- Sys.time()
+print(currentTime)
+```
+ 
+
+# Background
+
+Despite the progress in HIV care in suppressing viral load, disengagement from HIV care remains a significant issue that impairs the path of achieving the global target to end the HIV/AIDS epidemic by 2030, set forth by WHO and the Joint United Nations Programme on HIV/AIDS (UNAIDS). In light of the above, we sought to develop and validate data-driven / AI rules than can be used to foster the early identification of patients at risk of disengagement from care.
+
+# Objective 
+
+> The main objective of this study is to predict disengagement using modern machine learning techniques. 
+
+
+* Generate summary statistics for other key variables, including the calculated variables above
+* Provide % missing and /or completion rates
+* Provide distribution of key variables, noting down any anomaly such as 1900 dates, e.t.c
+* Bivariate analysis: between days  until actual visit (from scheduled visit) and other key variables
+* Multivariate analysis: using regression modeling
+* Predictive modeling: using Super Learner (Stacked Ensamble)
+
+
+
+# Analysis plan
+
+ <img src="plan.png" alt="drawing" />
+ 
+
+ 
+ 
+ 
+# Study Population 
+
+To achieve this objective, we are levering on data from USAID  Dumisha  Afya and USAID Uzima Afya catchment sites in Western  Kenya
+
+ <img src="dumisha.png" alt="drawing" />
+
+
+
+
+
+
+```{r fig.align='center', cache=T, fig.width=10, warning=FALSE}
+set.seed(123)
+source("utils.R")
+k_folds=11 # please not that the last fold will be used as a proxy for external validation set
+
+# read raw data
+#training_data_all <- readRDS(file = "training_data_all.Rds")
+#training_data_2021 <- readRDS(file = "training_data_2021.Rds")
+clean.long.df = readRDS(file = "clean.long.df.Rds")# %>%head(20000)
+#clean.long.df = clean_longitudinal_data(training_data_2021)
+#saveRDS(clean.long.df, file = "clean.long.df.Rds")
+# Stop the parallel backend
+clean.df= clean.long.df %>% 
+      filter(RTC_Date <= as.Date("2023-07-02") & Encounter_Date >= as.Date("2021-01-01") ) %>% # this is the db closure date
+      group_by(person_id)%>% mutate( Age_2021 = first(Age), Cohort = if_else(Age_2021>=18, "Adult", "Minor")) %>%
+      mutate(Month = as.numeric(format(as.Date(Encounter_Date), "%m")))  %>% #TODO: move to utils
+      ungroup() %>%
+      assign_folds(k_folds) #%>% group_by(person_id) %>% arrange( person_id, desc(Visit_Number)) %>% filter(row_number()==4)%>
+```
+
+
+
+```{r fig.align='center', cache=F, fig.width=10, warning=FALSE, eval=F}
+
+clean.df%>%group_by(person_id) %>%filter(row_number()==1)%>%ungroup()%>%group_byr (fold_id)%>%
+  summarise(n=n())%>%
+  kable( )
+
+
+```
+
+
+
+# Dataset
+
+## Prio Removing RTC > DB  & Data Cleaning
+
+* All HIV Patients: 189,191"
+* All Clinical HIV Visits: 6,053,430"
+* Cohort 2021 Patients: 95,979"
+* Cohort 2021 Visits: 4,559,104"
+
+```{r fig.align='center', cache=F, fig.width=10, warning=FALSE, eval=T}
+# training_data_all <- readRDS(file = "training_data_all.Rds")
+# training_data_2021 <- readRDS(file = "training_data_2021.Rds")
+# paste0("All HIV Patients: ",n_distinct(training_data_all$person_id))
+# paste0("All Clinical HIV Visits: ",n_distinct(training_data_all$encounter_id))
+# paste0("Cohort 2021 Patients: ",n_distinct(training_data_2021$person_id))
+# paste0("Cohort 2021 Visits: ",n_distinct(training_data_2021$encounter_id))
+# remove(training_data_all,training_data_2021)
+
+```
+## After Removing RTC > DB closure & Data Cleaning
+
+```{r fig.align='center', cache=F, fig.width=10, warning=FALSE, eval=T}
+paste0("Cohort 2021 Patients: ",n_distinct(clean.df$person_id))
+paste0("Cohort 2021 Visits: ",n_distinct(clean.df$Encounter_ID))
+
+
+
+```  
+
+## Transfer Ins
+
+
+```{r fig.align='center', cache=F, fig.width=10, warning=FALSE, eval=T}
+ clean.df %>%mutate(transfer_in = factor(transfer_in)) %>%
+  group_by(transfer_in) %>%
+  distinct(person_id) %>%
+  summarise(count = n()) %>%
+  ungroup() %>%
+  mutate(percentage = count / sum(count) * 100) %>%
+  kable()
+
+
+```
+
+
+```{r fig.align='center', cache=F, fig.width=10, warning=FALSE, eval=T}
+ clean.df %>%mutate(transfer_in_location_id = factor(transfer_in_location_id)) %>%
+  group_by(transfer_in_location_id) %>%
+  distinct(person_id) %>%
+  summarise(count = n()) %>%
+  ungroup() %>%
+  mutate(percentage = count / sum(count) * 100) %>%
+  kable()
+
+
+```
+
+## Transfer Out
+
+
+```{r fig.align='center', cache=F, fig.width=10, warning=FALSE, eval=T}
+ clean.df %>%mutate(transfer_in = factor(transfer_out)) %>%
+  group_by(transfer_out) %>%
+  distinct(person_id) %>%
+  summarise(count = n()) %>%
+  ungroup() %>%
+  mutate(percentage = count / sum(count) * 100) %>%
+  kable()
+
+
+```
+
+
+```{r fig.align='center', cache=F, fig.width=10, warning=FALSE, eval=T}
+ clean.df %>%mutate(transfer_out_location_id = factor(transfer_out_location_id)) %>%
+  group_by(transfer_out_location_id) %>%
+  distinct(person_id) %>%
+  summarise(count = n()) %>%
+  ungroup() %>%
+  mutate(percentage = count / sum(count) * 100) %>%
+  kable()
+
+
+```
+
+## Cohort Summary
+
+```{r fig.align='center', cache=F, fig.width=10, warning=FALSE, eval=T}
+ clean.df %>%
+  group_by(Cohort) %>%
+  distinct(person_id) %>%
+  summarise(count = n()) %>%
+  ungroup() %>%
+  mutate(percentage = count / sum(count) * 100) %>%
+  kable()
+
+
+```
+
+## Clinic Summary
+
+```{r fig.align='center', cache=F, fig.width=10, warning=FALSE, eval=T}
+ clean.df %>%
+  group_by(Clinic_Name) %>%
+  distinct(person_id) %>%
+  summarise(count = n()) %>%
+  ungroup() %>%
+  mutate(percentage = count / sum(count) * 100) %>%
+  kable()
+
+
+```
+  
+
+
+# Outcome Defintion
+
+
+ <img src="timeline2.png" alt="drawing" />
+
+We formally define disengagement using 4 clinically relevant outcomes 
+
+
+## Disengagement by 1 day 
+
+> Defined as failure to show up 1 day post scheduled return to clinic (RTC) date of the 2nd encounter
+
+
+```{r fig.align='center',warning=FALSE, cache=T}
+
+clean.df%>%filter( !is.na(`disengagement-1day`) )%>%
+  group_by(`disengagement-1day`)%>%count()%>%
+  mutate(Basis=`disengagement-1day`)%>%
+  hchart("pie",innerSize="50%",hcaes(Basis, `n`)) %>% 
+    hc_tooltip(formatter = JS("function(){
+                                return  '<b>' + this.point.Basis+ ' : </b>( Frequency:' +this.y+', Percentage: '+Highcharts.numberFormat(this.percentage)+'%)'
+  }"),useHTML = FALSE)%>%hc_plotOptions(pie =list(dataLabels = list(enabled = TRUE,format="{point.Basis}: {point.y} ({point.percentage:.2f}%)")))%>%
+   hc_legend(align = "left", verticalAlign = "top",
+            layout = "vertical", x = 0, y = 100) 
+```
+
+
+## Disengagement by 7-days 
+
+> Defined as failure to show up 2 weeks post scheduled return to clinic (RTC) date of the 1st encounter post enrolment
+
+```{r fig.align='center',warning=FALSE, cache=T}
+
+clean.df%>%filter( !is.na(`disengagement-7days`) )%>%
+  group_by(`disengagement-7days`)%>%count()%>%
+  mutate(Basis=`disengagement-7days`)%>%
+  hchart("pie",innerSize="50%",hcaes(Basis, `n`)) %>% 
+    hc_tooltip(formatter = JS("function(){
+                                return  '<b>' + this.point.Basis+ ' : </b>( Frequency:' +this.y+', Percentage: '+Highcharts.numberFormat(this.percentage)+'%)'
+  }"),useHTML = FALSE)%>%hc_plotOptions(pie =list(dataLabels = list(enabled = TRUE,format="{point.Basis}: {point.y} ({point.percentage:.2f}%)")))%>%
+   hc_legend(align = "left", verticalAlign = "top",
+            layout = "vertical", x = 0, y = 100) 
+```
+
+
+## Disengagement by 1 Month
+
+> Defined as failure to show up 1 month post scheduled return to clinic (RTC) date of the 2nd encounter
+
+
+
+```{r fig.align='center',warning=FALSE, cache=T}
+
+clean.df%>%filter( !is.na(`disengagement-1month`) )%>%
+  group_by(`disengagement-1month`)%>%count()%>%
+  mutate(Basis=`disengagement-1month`)%>%
+  hchart("pie",innerSize="50%",hcaes(Basis, `n`)) %>% 
+    hc_tooltip(formatter = JS("function(){
+                                return  '<b>' + this.point.Basis+ ' : </b>( Frequency:' +this.y+', Percentage: '+Highcharts.numberFormat(this.percentage)+'%)'
+  }"),useHTML = FALSE)%>%hc_plotOptions(pie =list(dataLabels = list(enabled = TRUE,format="{point.Basis}: {point.y} ({point.percentage:.2f}%)")))%>%
+   hc_legend(align = "left", verticalAlign = "top",
+            layout = "vertical", x = 0, y = 100) 
+```
+
+
+
+
+## Disengagement by 3 Months
+
+> Defined as failure to show up 3 months post scheduled return to clinic (RTC) date of the 2nd encounter
+
+```{r fig.align='center',warning=FALSE, cache=T}
+
+clean.df%>%filter( !is.na(`disengagement-3month`) )%>%
+  group_by(`disengagement-3month`)%>%count()%>%
+  mutate(Basis=`disengagement-3month`)%>%
+  hchart("pie",innerSize="50%",hcaes(Basis, `n`)) %>% 
+    hc_tooltip(formatter = JS("function(){
+                                return  '<b>' + this.point.Basis+ ' : </b>( Frequency:' +this.y+', Percentage: '+Highcharts.numberFormat(this.percentage)+'%)'
+  }"),useHTML = FALSE)%>%hc_plotOptions(pie =list(dataLabels = list(enabled = TRUE,format="{point.Basis}: {point.y} ({point.percentage:.2f}%)")))%>%
+   hc_legend(align = "left", verticalAlign = "top",
+            layout = "vertical", x = 0, y = 100) 
+```
+
+
+
+
+
+# Predictive Modeling
+
+
+
+##  Predictors
+
+```{r fig.align='center',warning=FALSE, cache=F, echo=T}
+
+X=c(
+  
+  c(    'Age','Age_NA', 
+        'Gender' ,  
+        'Duration_in_HIV_care', 'Duration_in_HIV_care_NA',  
+        'BMI', 'BMI_NA',
+        #'Days_to_Start_of_ART', 'Days_to_Start_of_ART_NA', 
+        'WHO_staging','WHO_staging_NA',
+        'Viral_Load_log10', 'Viral_Load_log10_NA', 'VL_suppression', 'Days_Since_Last_VL',
+        'HIV_disclosure','HIV_disclosure_NA', 
+        'Regimen_Line', 'Regimen_Line_NA',  
+        'Pregnancy',
+        'CD4','CD4_NA', 'Days_Since_Last_CD4',
+        "Encounter_Type_Class",
+        'ART_regimen',
+        'Visit_Number', 
+        'Days_defaulted_in_prev_enc', 'Days_defaulted_in_prev_enc_NA',
+         'num_2wks_defaults_last_3visits', 'num_2wks_defaults_last_3visits_NA',
+        'ever_defaulted_by_1m_in_last_1year','ever_defaulted_by_1m_in_last_1year_NA',
+         'ever_defaulted_by_1m_in_last_2year','ever_defaulted_by_1m_in_last_2year_NA',
+        
+        # Baseline
+        'Age_baseline',
+        'Gender_baseline' ,  
+        'BMI_baseline',
+        'WHO_staging_baseline',
+        'VL_suppression_baseline', 
+        'Viral_Load_log10_baseline',
+        'HIV_disclosure_baseline',
+        'Regimen_Line_baseline', 
+        'Pregnancy_baseline',
+        'CD4_baseline',
+        "Clinic_Name_baseline", 
+        'ART_regimen_baseline',
+        
+        # New Vars
+      'ART_Adherence',
+      'HIV_disclosure_stage',
+      'Clinic_County',
+      'Clinic_Name',
+      'Program_Name',     
+      'TB_screening',
+      'TB_Test_Result', 
+      'On_TB_TX',
+      'On_IPT',
+      'CA_CX_Screening',
+      'CA_CX_Screening_Result'
+      
+      #New var that will be introduced in V7
+      #'Month'
+        
+        
+    
+    )
+  
+  
+)#, ARV_dummy_vars )
+
+
+```
+
+## EDA | Before Cleaning
+
+
+```{r fig.align='center', cache=F, fig.width=10, warning=FALSE}
+
+clean.df_before_cleaning = clean.df
+
+```
+
+### Distribution 
+
+
+```{r fig.align='center', cache=F, fig.width=10, warning=FALSE}
+
+skimr::skim(clean.df_before_cleaning%>%select_if(names(.) %in% X))
+
+```
+
+
+### CDFs
+
+
+```{r fig.align='center', cache=F, fig.width=10, warning=FALSE}
+# reshape data to long format
+df <- clean.df_before_cleaning%>%select_if(names(.) %in% X) %>% select_if(is.numeric)
+
+df  <- pivot_longer(df, cols = everything(), names_to = "variable", values_to = "value")
+
+# plot CDFs of each variable
+for (i in unique(df$variable)) {
+  
+  print(ggplot(df%>%filter(variable==i), aes(x = value, col = variable)) +
+ 
+     stat_ecdf(lwd = 1.0,  geom = "step") +
+        stat_ecdf(lwd = 1.5,  geom = "point", col = "blue") +
+    xlab(i) +
+    ylab("CDF") +
+    ggtitle(paste("CDF of", i)) + theme(legend.position = "none") + theme_minimal())
+   
+}
+
+
+
+```
+
+###  Missing Data Summary
+
+```{r fig.align='center', cache=F,  fig.height=10, warning=FALSE}
+
+clean.df_before_cleaning %>%
+  select_if(names(.) %in% X) %>%
+  finalfit::missing_plot()
+
+```
+
+
+
+
+## EDA | After Cleaning
+
+```{r fig.align='center', cache=F, fig.width=10, warning=FALSE, echo=T}
+
+clean.df <- clean.df_before_cleaning %>%
+  mutate(
+   
+    Duration_in_HIV_care =  if_else(between(Duration_in_HIV_care, 0, 100), Duration_in_HIV_care,NA_real_),
+     BMI =  if_else(between(BMI, 5, 35), BMI,NA_real_),
+     CD4 =  if_else(between(CD4, 0, 1500), CD4,NA_real_),
+     Viral_Load_log10 =  if_else(between(Viral_Load_log10, -10, 10), Viral_Load_log10,NA_real_),
+    
+     Days_defaulted_in_prev_enc =  if_else(Days_defaulted_in_prev_enc<=-31, -31,Days_defaulted_in_prev_enc),
+    Days_defaulted_in_prev_enc =  if_else(Days_defaulted_in_prev_enc>365, 365,Days_defaulted_in_prev_enc),
+    
+     Days_Since_Last_VL =  if_else(Days_Since_Last_VL<0, 0,Days_Since_Last_VL),
+     Days_Since_Last_CD4 =  if_else(Days_Since_Last_CD4<0, 0,Days_Since_Last_CD4),
+     Days_Since_Last_VL =  if_else(Days_Since_Last_VL>1000, 1000,Days_Since_Last_VL),
+     Days_Since_Last_CD4 =  if_else(Days_Since_Last_CD4<1000, 1000,Days_Since_Last_CD4),
+
+     BMI_baseline =  if_else(between(BMI_baseline, 5, 35), BMI_baseline,NA_real_),
+     CD4_baseline =  if_else(between(CD4_baseline, 0, 1500), CD4_baseline,NA_real_),
+     Viral_Load_log10_baseline =  if_else(between(Viral_Load_log10_baseline, -10, 10), Viral_Load_log10_baseline,NA_real_)
+  )
+ # mutate(across(numeric, set_quantile_bounds_to_na))
+
+```
+
+
+### Distribution 
+
+
+```{r fig.align='center', cache=F, fig.width=10, warning=FALSE}
+
+skimr::skim(clean.df%>%select_if(names(.) %in% X))
+
+```
+
+
+### CDFs
+
+
+```{r fig.align='center', cache=F, fig.width=10, warning=FALSE}
+# reshape data to long format
+df <- clean.df%>%select_if(names(.) %in% X) %>% select_if(is.numeric)  
+
+df  <- pivot_longer(df, cols = everything(), names_to = "variable", values_to = "value")
+
+# plot CDFs of each variable
+for (i in unique(df$variable)) {
+  
+  print(ggplot(df%>%filter(variable==i), aes(x = value, col = variable)) +
+ 
+     stat_ecdf(lwd = 1.0,  geom = "step") +
+        stat_ecdf(lwd = 1.5,  geom = "point", col = "blue") +
+    xlab(i) +
+    ylab("CDF") +
+    ggtitle(paste("CDF of", i))+ theme(legend.position = "none")+theme_minimal()) 
+   
+}
+
+
+
+```
+
+###  Missing Data Summary
+
+```{r fig.align='center', cache=F,  fig.height=10, warning=FALSE}
+
+clean.df %>%
+  select_if(names(.) %in% X) %>%
+  finalfit::missing_plot()
+
+```
+
+
+
+
+##  Missing Data Handling
+ 
+ 
+```{r fig.align='center',warning=FALSE, cache=F, echo=T}
+sigma=1
+# Handle Missing Data
+model.df = clean.df%>%
+  mutate(
+    #Patient_Care_Status=as.factor(Patient_Care_Status),
+    y0=as.factor(`disengagement-1day`),
+    y0_weight = if_else(y0=='Disengaged', (sum(clean.df[,"disengagement-1day"] == 'Active In Care', na.rm=T) / nrow(clean.df))*sigma,
+                        1-sum(clean.df[,"disengagement-1day"] == 'Active In Care', na.rm=T) / nrow(clean.df)),
+    y1=as.factor(`disengagement-2wks`),
+    y1_weight = if_else(y1=='Disengaged', (sum(clean.df[,"disengagement-2wks"] == 'Active In Care', na.rm=T) / nrow(clean.df))*sigma,
+                        1-sum(clean.df[,"disengagement-2wks"] == 'Active In Care', na.rm=T) / nrow(clean.df)),
+    
+    y2=as.factor(`disengagement-1month`),
+    y2_weight = if_else(y2=='Disengaged', (sum(clean.df[,"disengagement-1month"] == 'Active In Care', na.rm=T) / nrow(clean.df))*sigma,
+                        1-sum(clean.df[,"disengagement-1month"] == 'Active In Care', na.rm=T) / nrow(clean.df)),
+    y3=as.factor(`disengagement-3month`),
+    y3_weight = if_else(y3=='Disengaged', (sum(clean.df[,"disengagement-3month"] == 'Active In Care', na.rm=T) / nrow(clean.df))*sigma,
+                        1-sum(clean.df[,"disengagement-3month"] == 'Active In Care', na.rm=T) / nrow(clean.df)),
+    
+    y4=as.factor(`disengagement-7days`),
+    y4_weight = if_else(y4=='Disengaged', (sum(clean.df[,"disengagement-7days"] == 'Active In Care', na.rm=T) / nrow(clean.df))*sigma,
+                        1-sum(clean.df[,"disengagement-7days"] == 'Active In Care', na.rm=T) / nrow(clean.df))
+  )%>%
+  mutate(
+    
+    # Add missing Data Indicators
+    Age_NA= ifelse(is.na(Age), 1, 0),
+    Duration_in_HIV_care_NA= ifelse(is.na(Duration_in_HIV_care),  1, 0),
+    BMI_NA= ifelse(is.na(BMI), 1, 0),
+    WHO_staging_NA= ifelse(is.na(WHO_staging),  1, 0),
+    Regimen_Line_NA= ifelse(is.na(Regimen_Line),  1, 0),
+    HIV_disclosure_NA= ifelse(is.na(HIV_disclosure),  1, 0),
+    CD4_NA= ifelse(is.na(CD4), 1, 0),
+    Viral_Load_log10_NA= ifelse(is.na(Viral_Load_log10), 1, 0),
+    #Days_to_Start_of_ART_NA= ifelse(is.na(Days_to_Start_of_ART),  1, 0), #REMOVED
+    #Adherence_Counselling_Sessions_NA = ifelse(is.na(Adherence_Counselling_Sessions),  1, 0),
+    Days_defaulted_in_prev_enc_NA= ifelse(is.na(Days_defaulted_in_prev_enc), 1, 0),
+    num_2wks_defaults_last_3visits_NA= ifelse(is.na(num_2wks_defaults_last_3visits), 1, 0),
+    ever_defaulted_by_1m_in_last_1year_NA= ifelse(is.na(ever_defaulted_by_1m_in_last_1year), 1, 0),
+    ever_defaulted_by_1m_in_last_2year_NA= ifelse(is.na(ever_defaulted_by_1m_in_last_2year), 1, 0),
+    
+    # Set NA to a fixed value (usually zero)
+    Age= ifelse(is.na(Age), 0, Age),
+    Duration_in_HIV_care= ifelse(is.na(Duration_in_HIV_care), 0, Duration_in_HIV_care),
+    #Weight= ifelse(is.na(Weight), 0, Weight),
+    #Height= ifelse(is.na(Height),0, Height),
+    BMI= ifelse(is.na(BMI),0, BMI),
+    WHO_staging= ifelse(is.na(WHO_staging), 0, WHO_staging),
+    Regimen_Line= ifelse(is.na(Regimen_Line), 0, Regimen_Line),
+    HIV_disclosure= ifelse(is.na(HIV_disclosure), 0, HIV_disclosure),
+    CD4= ifelse(is.na(CD4),0, CD4),
+    Viral_Load_log10= ifelse(is.na(Viral_Load_log10), log10(1), Viral_Load_log10),
+    #Days_to_Start_of_ART= ifelse(is.na(Days_to_Start_of_ART), 0, Days_to_Start_of_ART),  #REMOVED
+    #Adherence_Counselling_Sessions_NA= ifelse(is.na(Adherence_Counselling_Sessions), 0, Adherence_Counselling_Sessions),
+    Days_defaulted_in_prev_enc= ifelse(is.na(Days_defaulted_in_prev_enc),0, Days_defaulted_in_prev_enc),
+    num_2wks_defaults_last_3visits= ifelse(is.na(num_2wks_defaults_last_3visits),0, num_2wks_defaults_last_3visits),
+    ever_defaulted_by_1m_in_last_1year= ifelse(is.na(ever_defaulted_by_1m_in_last_1year),0,ever_defaulted_by_1m_in_last_1year),
+    ever_defaulted_by_1m_in_last_2year= ifelse(is.na(ever_defaulted_by_1m_in_last_2year),0, ever_defaulted_by_1m_in_last_2year)
+   
+    
+  )
+
+```
+
+
+### LOCF
+
+`LOCF` stands for "Last Observation Carried Forward."
+
+In R, the `na.locf` function from the `zoo` package provides an implementation of LOCF. It takes a vector or a data frame with missing values and carries forward the last non-NA value to fill in the missing values. The `na.rm` argument can be set to `FALSE` to ensure that NA values are not removed during the lagging process, which is important for imputing longitudinal data where the goal is to maintain the original time order and structure of the data.
+
+
+```{r fig.align='center',warning=FALSE, cache=F, echo=F, eval=F}
+
+dt.df=clean.df %>% 
+  select(person_id,Visit_Number, Encounter_ID, Encounter_Datetime, Viral_Load_log10_orig, Viral_Load_log10,WHO_staging,WHO_staging_orig,
+           Next_Encounter_Datetime, RTC_Date)
+ 
+
+ kable(head(dt.df,50) )%>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),full_width = F)
+
+```
+
+
+
+
+
+
+## Training Parameters
+
+```{r fig.align='center', fig.width=6, warning=FALSE, cache=F, results='hide', echo=T}
+
+# Experimentation: started 10:30am
+max_models=40#200 #10
+stopping_rounds =7#15 #10
+stopping_tolerance = 0.0001#0.0000001#0.0001 #0.02
+fold_column <- "fold_id"
+max_runtime_mins = 60#22000000#80
+balance_classes = F # false by default
+include_algos= c(
+  "XGBoost", #"DRF", 
+  "StackedEnsemble",  "GLM",
+"GBM"
+
+ )
+stopping_metric="logloss"
+sort_metric="auc"
+assignment_type="stratified"
+verbosity= NA
+
+
+# Production
+# max_models=50#200 #10
+# stopping_rounds = 5#15 #10
+# stopping_tolerance = 0.001#0.0000001#0.0001 #0.02
+# fold_column <- "fold_id"
+# max_runtime_mins = 60#22000000#80
+# balance_classes = F # false by default
+# include_algos= c(
+#   "XGBoost",#"XRF",
+#   "StackedEnsemble",  "GLM",
+# "GBM"
+# 
+#  )
+# stopping_metric="logloss"
+# sort_metric="auc"
+# assignment_type="stratified"
+# verbosity= NA
+  
+```
+
+
+
+
+
+## 1 day Disengagement | Adult + Minor
+
+```{r fig.align='center',warning=FALSE, cache=F}
+y='y0'
+x = c(X)
+weights_column = 'y0_weight'
+main.df = model.df%>%filter(!is.na(`y0`)  )%>%select(c(y,x, fold_id, weights_column))
+
+#main.df[is.na(main.df)] ="NA"
+#write.csv( model.df%>%mutate(person_id=person_id+14563)%>%filter(fold_id ==2 ), file ="synthetic_df.csv", row.names = FALSE)
+
+h2o_frame <- as.h2o(main.df)
+
+train <- h2o.assign(h2o_frame[h2o_frame$fold_id != k_folds, ],key = "train")
+test <- h2o.assign(h2o_frame[h2o_frame$fold_id == k_folds, ],key = "test")
+
+print(dim(train[[1]]))
+
+print(dim(test[[2]]))
+
+
+```
+
+
+
+```{r fig.align='center', fig.width=6, warning=FALSE, cache=F, results='hide'}
+one.month.h2o <- h2o.automl(x = x, y = y, training_frame = train, leaderboard_frame = test,  fold_column = fold_column, balance_classes=balance_classes,
+    stopping_metric =stopping_metric, stopping_rounds = stopping_rounds, stopping_tolerance = stopping_tolerance, max_models = max_models, 
+    max_runtime_secs = 60 * max_runtime_mins * max_models, seed = 1, sort_metric = sort_metric, 
+    project_name=paste0(y,'_', format(Sys.time(), "%H%M%S")), 
+    include_algos=include_algos, keep_cross_validation_fold_assignment= T,
+    keep_cross_validation_predictions=T, verbosity = verbosity, 
+    weights_column = weights_column,
+    max_runtime_secs_per_model = 60 * max_runtime_mins)
+autoML=one.month.h2o
+
+```
+
+
+```{r fig.align='center', fig.width=6, warning=FALSE, cache=F, results='hide', eval=T}
+
+unlink("exports/y0_1days_adult_minor_IIT", recursive = TRUE)
+for (i in 1:nrow(autoML@leaderboard)) {
+   model_id <- as.character(autoML@leaderboard[i, "model_id"])
+   model_auc <-autoML@leaderboard[i, "auc"]
+   model_rank <- i
+   model <- h2o.getModel(model_id)
+   h2o.saveModel(model, path = paste0("exports/y0_1days_adult_minor_IIT/", model_rank, "_", model_id, "_auc_", round(model_auc, 3)))
+  
+}
+
+
+```
+
+
+
+
+### Training Scoring History
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+lb <- h2o.get_leaderboard(object = autoML, extra_columns = "ALL")
+# Get model ids for all models in the AutoML Leaderboard
+model_ids <- filter(as.data.frame(lb), !str_detect(model_id, "Stacked|grid"))[, 1]
+# Use function:
+for (model_id in model_ids[1:length(model_ids)]) {
+ tryCatch(
+    expr = {
+        print(model_id)
+        if(!is.na(model_id)){
+           plot( h2o.getModel(model_id),
+             timestep = "duration",
+             metric = "logloss")
+           
+        }
+       
+    },
+    error = function(e){},
+    warning = function(w){},
+    finally = { }
+)
+}
+
+
+```
+
+
+### K-Folds CV Performance
+#### Summary Table
+
+```{r fig.align='center', fig.width=6, warning=FALSE, cache=F}
+lb <- h2o.get_leaderboard(object = autoML, extra_columns = "ALL")
+
+Table.weighted= flextable(lb%>% as.data.frame())%>% 
+   add_header_row( values = c( 'Evaluation Metric on test data'), colwidths = c(10) )%>%
+  theme_zebra() %>% 
+  theme_booktabs(bold_header = TRUE) %>% bg(., i= 1, part = "header", bg = "#f2f9ff") %>% 
+   fontsize(size = 9, part = "all") %>% 
+  set_table_properties(width = 1, layout = "autofit")# For pretty word output
+ Table.weighted
+```
+
+
+
+
+#### Evaluation Metric Plots
+##### All Models
+
+```{r fig.align='center', cache=F,  warning=FALSE}
+lb <- autoML@leaderboard
+
+
+
+# Get model ids for all models in the AutoML Leaderboard
+model_ids <- filter(as.data.frame(lb$model_id), !str_detect(model_id, "Stacked|grid"))[, 1]
+# Use function:
+
+l <- list()
+for (model_id in model_ids[1:length(model_ids)]) {
+  dd=results_cross_validation( h2o.getModel(model_id))
+  dd$Model=model_id
+  dd$cv=rownames_to_column(dd, var = "cv")$cv
+  l[[model_id]]=dd
+}
+
+
+theme_set(theme_minimal())
+mode.df=do.call(rbind,l)%>%  
+  separate(Model, c("ML Model", "Postfix"), "_AutoML")%>%
+  mutate(`ML Model`= str_replace(`ML Model`, "XGBoost", "XGB"))%>%
+  mutate(`ML Model`=str_replace(`ML Model`, "DeepLearning", "DL"))%>%
+  filter(!str_detect(`ML Model`, "XRT"))
+
+
+angle=10;size = 0.8; jitter = 0.3;
+
+p1= mode.df %>%
+ ggboxplot(x ="ML Model", y = "Accuracy",merge = TRUE,rug = TRUE ,   color = "ML Model", shape = "ML Model",
+                    add.params = list(size = size, jitter = jitter),  repel = TRUE)+
+              theme_minimal() +theme(axis.title.x = element_blank(),
+                                     axis.text.x = element_text(size = 10))+
+  stat_summary(fun.data = function(x) data.frame(y=round(mean(x)-(sd(x)*1.5),2), label = paste("=",round(mean(x)*100,2),"%")),size=3,
+               geom="text", color = "#7AD7F0") +scale_y_continuous(labels = scales::percent) 
+
+p2= mode.df %>%
+ ggboxplot(x ="ML Model", y = "AUC",merge = TRUE,rug = TRUE ,   color = "ML Model", shape = "ML Model",
+                    add.params = list(size = size, jitter = jitter),  repel = TRUE)+
+              theme_minimal() +theme(axis.title.x = element_blank(),
+                                     axis.text.x = element_text(size = 10))+
+  stat_summary(fun.data = function(x) data.frame(y=round(mean(x)-(sd(x)*1.5),2), label = paste("=",round(mean(x)*100,2),"%")),size=3,
+               geom="text", color = "#7AD7F0") +scale_y_continuous(labels = scales::percent) 
+ 
+  grid.arrange( 
+   
+   p1 + theme(legend.position="none") ,
+   p2 + theme(legend.position="none"),
+   ncol=1, top="Predictive Performance Evaluation"
+               ) 
+```
+
+```{r fig.align='center', cache=F,  warning=FALSE}
+
+p3= mode.df %>%
+ ggboxplot(x ="ML Model", y = "Sensitivity",merge = TRUE,rug = TRUE ,   color = "ML Model", shape = "ML Model",
+                    add.params = list(size = size, jitter = jitter),  repel = TRUE)+
+              theme_minimal() +theme(axis.title.x = element_blank(),
+                                     axis.text.x = element_text(size = 10))+
+  stat_summary(fun.data = function(x) data.frame(y=round(mean(x)-(sd(x)*1.5),2), label = paste("=",round(mean(x)*100,2),"%")),size=3,
+               geom="text", color = "#ADD8E6") +scale_y_continuous(labels = scales::percent) 
+
+p4= mode.df %>%
+ ggboxplot(x ="ML Model", y = "Specificity",merge = TRUE,rug = TRUE ,   color = "ML Model", shape = "ML Model",
+                    add.params = list(size = size, jitter = jitter),  repel = TRUE)+
+              theme_minimal() +theme(axis.title.x = element_blank(),
+                                     axis.text.x = element_text(size = 10))+
+  stat_summary(fun.data = function(x) data.frame(y=round(mean(x)-(sd(x)*1.5),2), label = paste("=",round(mean(x)*100,2),"%")),size=3,
+               geom="text", color = "#ADD8E6") +scale_y_continuous(labels = scales::percent) 
+ 
+  grid.arrange( 
+   
+   p3 + theme(legend.position="none") ,
+   p4 + theme(legend.position="none"),
+   ncol=1#, #top="Predictive Performance Evaluation"
+               ) 
+
+```
+
+
+
+```{r fig.align='center', cache=F,  warning=FALSE}
+
+p3= mode.df %>% mutate(PPV=Precision)  %>% 
+ ggboxplot(x ="ML Model", y = "PPV",merge = TRUE,rug = TRUE ,   color = "ML Model", shape = "ML Model",
+                    add.params = list(size = size, jitter = jitter),  repel = TRUE)+
+              theme_minimal() +theme(axis.title.x = element_blank(),
+                                     axis.text.x = element_text(size = 10))+
+  stat_summary(fun.data = function(x) data.frame(y=round(mean(x)-(sd(x)*1.5),2), label = paste("=",round(mean(x)*100,2),"%")),size=3,
+               geom="text", color = "#ADD8E6") +scale_y_continuous(labels = scales::percent) 
+
+p4= mode.df %>%
+ ggboxplot(x ="ML Model", y = "Logloss",merge = TRUE,rug = TRUE ,   color = "ML Model", shape = "ML Model",
+                    add.params = list(size = size, jitter = jitter),  repel = TRUE)+
+              theme_minimal() +theme(axis.title.x = element_blank(),
+                                     axis.text.x = element_text(size = 10))+
+  stat_summary(fun.data = function(x) data.frame(y=round(mean(x)-(sd(x)*1.5),2), label = paste("=",round(mean(x)*100,2),"%")),size=3,
+               geom="text", color = "#ADD8E6") +scale_y_continuous(labels = scales::percent) 
+ 
+  grid.arrange( 
+   
+   p3 + theme(legend.position="none") ,
+   p4 + theme(legend.position="none"),
+   ncol=1#, #top="Predictive Performance Evaluation"
+               ) 
+
+```
+
+##### Each model
+
+```{r fig.align='center', cache=F,  warning=FALSE}
+
+results_cross_validation <- function(h2o_model) {
+  h2o_model@model$cross_validation_metrics_summary %>% 
+    as.data.frame() %>% 
+    select(-mean, -sd) %>% 
+    t() %>% 
+    as.data.frame() %>% 
+    mutate_all(as.character) %>% 
+    mutate_all(as.numeric) %>% 
+    select(Accuracy = accuracy, 
+           
+           AUC = auc, 
+           Precision = precision, 
+           Specificity = specificity, 
+           Sensitivity = recall, 
+           Logloss = logloss) %>% 
+    return()
+  }
+
+
+# Model Performance by Graph: 
+theme_set(theme_minimal())
+
+plot_results <- function(df_results) {
+  df_results %>% 
+  gather(Metrics, Values) %>% 
+  ggplot(aes(Metrics, Values, fill = Metrics, color = Metrics)) +
+  geom_boxplot(alpha = 0.3, show.legend = FALSE) + 
+  theme(plot.margin = unit(c(1, 1, 1, 1), "cm")) +    
+  scale_y_continuous(labels = scales::percent) + 
+  facet_wrap(~ Metrics, scales = "free") + 
+  labs(title = "Model Performance by Some Criteria Selected", y = NULL)
+  }
+
+
+
+# Get model ids for all models in the AutoML Leaderboard
+model_ids <- filter(as.data.frame(lb$model_id), !str_detect(model_id, "Stacked|grid"))[, 1]
+# Use function:
+for (model_id in model_ids[1:length(model_ids)]) {
+ print(plot_results(results_cross_validation( h2o.getModel(model_id)) )+labs(subtitle = model_id))
+}
+
+
+```
+
+
+
+### Best ML Predicted Probability Analysis
+
+
+#### Density Plot
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+pred_actual = as_data_frame(
+  list(
+    `Predicted_probability` = h2o.predict(autoML@leader, train) %>% as.data.frame() %>% pull(Disengaged),
+    Actual = train %>% as.data.frame() %>% pull(y0)
+    )
+)
+
+ggdensity(pred_actual, x = "Predicted_probability",
+   add = "mean", rug = TRUE,
+   color = "Actual", fill = "Actual",
+   palette = c("#00AFBB", "#E7B800"))
+
+```
+
+
+
+#### Disengagement rate for top 20 % of the predicted probability
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+
+pred_actual %>% #group_by(Actual) %>% 
+  arrange(desc(Predicted_probability)) %>% 
+  filter(Predicted_probability > quantile(Predicted_probability, .80))%>%
+  group_by(`Actual`)%>%count()%>%
+  mutate(Basis=`Actual`)%>%
+  hchart("pie",innerSize="50%",hcaes(Basis, `n`)) %>% 
+    hc_tooltip(formatter = JS("function(){
+                                return  '<b>' + this.point.Basis+ ' : </b>( Frequency:' +this.y+', Percentage: '+Highcharts.numberFormat(this.percentage)+'%)'
+  }"),useHTML = FALSE)%>%hc_plotOptions(pie =list(dataLabels = list(enabled = TRUE,format="{point.Basis}: {point.y} ({point.percentage:.2f}%)")))%>%
+   hc_legend(align = "left", verticalAlign = "top",
+            layout = "vertical", x = 0, y = 100) 
+
+```
+
+#### Disengagement rate for top 15 % of the predicted probability
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+pred_actual %>% #group_by(Actual) %>% 
+  arrange(desc(Predicted_probability)) %>% 
+  filter(Predicted_probability > quantile(Predicted_probability, .85))%>%
+  group_by(`Actual`)%>%count()%>%
+  mutate(Basis=`Actual`)%>%
+  hchart("pie",innerSize="50%",hcaes(Basis, `n`)) %>% 
+    hc_tooltip(formatter = JS("function(){
+                                return  '<b>' + this.point.Basis+ ' : </b>( Frequency:' +this.y+', Percentage: '+Highcharts.numberFormat(this.percentage)+'%)'
+  }"),useHTML = FALSE)%>%hc_plotOptions(pie =list(dataLabels = list(enabled = TRUE,format="{point.Basis}: {point.y} ({point.percentage:.2f}%)")))%>%
+   hc_legend(align = "left", verticalAlign = "top",
+            layout = "vertical", x = 0, y = 100) 
+
+```
+
+
+#### Disengagement rate for top 10 % of the predicted probability
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+pred_actual %>% #group_by(Actual) %>% 
+  arrange(desc(Predicted_probability)) %>% 
+  filter(Predicted_probability > quantile(Predicted_probability, .90))%>%
+  group_by(`Actual`)%>%count()%>%
+  mutate(Basis=`Actual`)%>%
+  hchart("pie",innerSize="50%",hcaes(Basis, `n`)) %>% 
+    hc_tooltip(formatter = JS("function(){
+                                return  '<b>' + this.point.Basis+ ' : </b>( Frequency:' +this.y+', Percentage: '+Highcharts.numberFormat(this.percentage)+'%)'
+  }"),useHTML = FALSE)%>%hc_plotOptions(pie =list(dataLabels = list(enabled = TRUE,format="{point.Basis}: {point.y} ({point.percentage:.2f}%)")))%>%
+   hc_legend(align = "left", verticalAlign = "top",
+            layout = "vertical", x = 0, y = 100) 
+
+```
+
+
+### Best ML Detailed Performance
+
+
+#### Training data
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+pred_actual = as_data_frame(
+  list(
+    `Predicted_probability` = h2o.predict(autoML@leader, train) %>% as.data.frame() %>% pull(Disengaged),
+    Actual = train %>% as.data.frame() %>% pull(y0)
+    )
+)
+
+ggdensity(pred_actual, x = "Predicted_probability",
+   add = "mean", rug = TRUE,
+   color = "Actual", fill = "Actual",
+   palette = c("#00AFBB", "#E7B800"))
+```
+
+
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+h2o.performance(autoML@leader)%>%plot()
+autoML@leader
+
+```
+
+
+
+#### Out-of sample data (test)
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+pred_actual = as_data_frame(
+  list(
+    `Predicted_probability` = h2o.predict(autoML@leader, test) %>% as.data.frame() %>% pull(Disengaged),
+    Actual = test %>% as.data.frame() %>% pull(y0)
+    )
+)
+
+ggdensity(pred_actual, x = "Predicted_probability",
+   add = "mean", rug = TRUE,
+   color = "Actual", fill = "Actual",
+   palette = c("#00AFBB", "#E7B800"))
+```
+
+
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+
+h2o.performance(autoML@leader, newdata=test)%>%plot()
+pd_best <- h2o.predict(autoML@leader, test) %>% as.data.frame() %>% pull(Disengaged)
+
+h2o.performance(model = autoML@leader, newdata = test)
+
+```
+
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+h2o.confusionMatrix(autoML@leader)
+
+```
+
+
+
+
+
+
+
+### Model Explanation
+
+
+#### Variable Importance
+
+
+```{r fig.align='center', warning=FALSE, cache=F}
+lb <- autoML@leaderboard
+#print(lb, n = nrow(lb))
+# Get model ids for all models in the AutoML Leaderboard
+#model_ids <- as.data.frame(lb$model_id)[, 1]
+model_ids <- filter(as.data.frame(lb$model_id), !str_detect(model_id, "Stacked|grid"))[, 1]
+
+# View variable importance for the top 5 models (besides Stacked Ensemble)
+for (model_id in model_ids[1:length(model_ids)]) {
+  tryCatch(
+    expr = {
+        print(model_id)
+        if(!is.na(model_id)){
+           m <- h2o.getModel(model_id)
+           #h2o.varimp_plot(m,50 )
+           varimp <- h2o.varimp(m)
+
+          print(ggplot(varimp, aes(x = reorder(variable, -relative_importance), y = relative_importance)) +
+            geom_bar(stat = "identity", fill = "dodgerblue") +
+            xlab("Variable") + ylab("Relative Importance") +
+            theme(axis.text.x = element_text(angle = 45, hjust = 1)))
+        }
+       
+    },
+    error = function(e){},
+    warning = function(w){},
+    finally = { }
+)
+   
+   
+}
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+#### LIME (Local)
+
+LIME (See the paper: https://arxiv.org/abs/1602.04938 ) stands for **Local Interpretable Model-agnostic Explanations**, and is a method for explaining the Black-Box machine learning model classifiers (e.g. deep learning, stacked ensembles, random forest). LIME is used to determine which features contribute to the prediction (& by how much) for a single observation (i.e. local). The purpose of LIME is to explain the predictions of black box classifiers. What this means is that for any given prediction and any given classifier it is able to determine a small set of features in the original data that has driven the outcome of the prediction. To learn more about the methodology of lime read the paper and visit the repository of the original implementation.
+
+
+```{r fig.align='center', cache=F, warning=FALSE,  eval=F}
+model_ids <- filter(as.data.frame(lb$model_id), !str_detect(model_id, "Stacked|grid"))[, 1]
+
+explainer <- as.data.frame(train)%>%select(c(sub("-", ".", x))) %>%
+   # select(-Selected) %>%
+    lime(
+        model           = h2o.getModel(model_ids[1]),
+        n_bins          = 5
+    )
+
+
+explanation <-  as.data.frame(test)%>%select(c(sub("-", ".", x),y)) %>% 
+    group_by(!!y) %>% 
+    sample_n(10) %>% ungroup()  %>% 
+    select(!!sub("-", ".", x)) %>%
+    lime::explain(
+        explainer = explainer,
+        labels          = "Disengaged",
+        # number of features to be returned
+        n_features = 5,
+        # number of localized linear models
+        n_permutations = 5000
+    )
+
+
+plot_explanations(explanation)
+
+for (i in 1:10){
+  print(explanation %>%
+      filter(case == i)%>%
+      plot_features())
+}
+
+
+```
+
+
+
+#### Partial Dependence Plot
+Partial dependence plot gives a graphical depiction of the marginal effect of a variable on the response. The effect of a variable is measured in change in the mean response. Note: Unlike randomForest's partialPlot when plotting partial dependence the mean response (probabilities) is returned rather than the mean of the log class probability.
+
+```{r fig.align='center', cache=F, warning=FALSE, eval=T}
+
+model_ids <- filter(as.data.frame(lb$model_id), !str_detect(model_id, "Stacked|grid"))[, 1]
+ h2o.partialPlot(h2o.getModel(model_ids[1]), data =  train)
+
+```
+    
+    
+
+
+### Ensemble Exploration
+
+To understand how the ensemble works, let’s take a peek inside the Stacked Ensemble “All Models” model. The “All Models” ensemble is an ensemble of all of the individual models in the AutoML run. This is often the top performing model on the leaderboard.
+
+
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE, eval=T}
+
+# Get model ids for all models in the AutoML Leaderboard
+model_ids <- as.data.frame(autoML@leaderboard$model_id)[, 1]
+# Get the 'All Models' Stacked Ensemble model
+se <- h2o.getModel(grep("StackedEnsemble_AllModels", model_ids, value = TRUE)[1])
+# Get the Stacked Ensemble metalearner model
+metalearner <- h2o.getModel(se@model$metalearner$name)
+
+
+#h2o.varimp(metalearner)
+h2o.varimp_plot(metalearner)
+
+```
+
+
+Examine the variable importance of the metalearner (combiner) algorithm in the ensemble. This shows us how much each base learner is contributing to the ensemble. The AutoML Stacked Ensembles use the default metalearner algorithm (GLM with non-negative weights), so the variable importance of the metalearner is actually the standardized coefficient magnitudes of the GLM.
+
+We can also plot the base learner contributions to the ensemble.
+
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE, eval=T}
+
+h2o.varimp_plot(metalearner)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## 1 day Disengagement | Adult
+
+```{r fig.align='center',warning=FALSE, cache=F}
+y='y0'
+x = c(X)
+weights_column = 'y0_weight'
+main.df = model.df%>%filter(!is.na(`y0`) & Cohort=='Adult' )%>%select(c(y,x, fold_id, weights_column))
+
+#main.df[is.na(main.df)] ="NA"
+#write.csv( model.df%>%mutate(person_id=person_id+14563)%>%filter(fold_id ==2 ), file ="synthetic_df.csv", row.names = FALSE)
+
+h2o_frame <- as.h2o(main.df)
+
+train <- h2o.assign(h2o_frame[h2o_frame$fold_id != k_folds, ],key = "train")
+test <- h2o.assign(h2o_frame[h2o_frame$fold_id == k_folds, ],key = "test")
+
+print(dim(train[[1]]))
+
+print(dim(test[[2]]))
+
+
+```
+
+
+
+```{r fig.align='center', fig.width=6, warning=FALSE, cache=F, results='hide'}
+one.month.h2o <- h2o.automl(x = x, y = y, training_frame = train, leaderboard_frame = test,  fold_column = fold_column, balance_classes=balance_classes,
+    stopping_metric =stopping_metric, stopping_rounds = stopping_rounds, stopping_tolerance = stopping_tolerance, max_models = max_models, 
+    max_runtime_secs = 60 * max_runtime_mins * max_models, seed = 1, sort_metric = sort_metric, 
+    project_name=paste0(y,'_', format(Sys.time(), "%H%M%S")), 
+    include_algos=include_algos, keep_cross_validation_fold_assignment= T,
+    keep_cross_validation_predictions=T, verbosity = verbosity, 
+    weights_column = weights_column,
+    max_runtime_secs_per_model = 60 * max_runtime_mins)
+autoML=one.month.h2o
+
+```
+
+
+```{r fig.align='center', fig.width=6, warning=FALSE, cache=F, results='hide', eval=T}
+
+unlink("exports/y0_1days_adult_IIT", recursive = TRUE)
+for (i in 1:nrow(autoML@leaderboard)) {
+   model_id <- as.character(autoML@leaderboard[i, "model_id"])
+   model_auc <-autoML@leaderboard[i, "auc"]
+   model_rank <- i
+   model <- h2o.getModel(model_id)
+   h2o.saveModel(model, path = paste0("exports/y0_1days_adult_IIT/", model_rank, "_", model_id, "_auc_", round(model_auc, 3)))
+  
+}
+
+
+```
+
+
+
+
+### Training Scoring History
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+lb <- h2o.get_leaderboard(object = autoML, extra_columns = "ALL")
+# Get model ids for all models in the AutoML Leaderboard
+model_ids <- filter(as.data.frame(lb), !str_detect(model_id, "Stacked|grid"))[, 1]
+# Use function:
+for (model_id in model_ids[1:length(model_ids)]) {
+ tryCatch(
+    expr = {
+        print(model_id)
+        if(!is.na(model_id)){
+           plot( h2o.getModel(model_id),
+             timestep = "duration",
+             metric = "logloss")
+           
+        }
+       
+    },
+    error = function(e){},
+    warning = function(w){},
+    finally = { }
+)
+}
+
+
+```
+
+
+### K-Folds CV Performance
+#### Summary Table
+
+```{r fig.align='center', fig.width=6, warning=FALSE, cache=F}
+lb <- h2o.get_leaderboard(object = autoML, extra_columns = "ALL")
+
+Table.weighted= flextable(lb%>% as.data.frame())%>% 
+   add_header_row( values = c( 'Evaluation Metric on test data'), colwidths = c(10) )%>%
+  theme_zebra() %>% 
+  theme_booktabs(bold_header = TRUE) %>% bg(., i= 1, part = "header", bg = "#f2f9ff") %>% 
+   fontsize(size = 9, part = "all") %>% 
+  set_table_properties(width = 1, layout = "autofit")# For pretty word output
+ Table.weighted
+```
+
+
+
+
+#### Evaluation Metric Plots
+##### All Models
+
+```{r fig.align='center', cache=F,  warning=FALSE}
+lb <- autoML@leaderboard
+
+
+
+# Get model ids for all models in the AutoML Leaderboard
+model_ids <- filter(as.data.frame(lb$model_id), !str_detect(model_id, "Stacked|grid"))[, 1]
+# Use function:
+
+l <- list()
+for (model_id in model_ids[1:length(model_ids)]) {
+  dd=results_cross_validation( h2o.getModel(model_id))
+  dd$Model=model_id
+  dd$cv=rownames_to_column(dd, var = "cv")$cv
+  l[[model_id]]=dd
+}
+
+
+theme_set(theme_minimal())
+mode.df=do.call(rbind,l)%>%  
+  separate(Model, c("ML Model", "Postfix"), "_AutoML")%>%
+  mutate(`ML Model`= str_replace(`ML Model`, "XGBoost", "XGB"))%>%
+  mutate(`ML Model`=str_replace(`ML Model`, "DeepLearning", "DL"))%>%
+  filter(!str_detect(`ML Model`, "XRT"))
+
+
+angle=10;size = 0.8; jitter = 0.3;
+
+p1= mode.df %>%
+ ggboxplot(x ="ML Model", y = "Accuracy",merge = TRUE,rug = TRUE ,   color = "ML Model", shape = "ML Model",
+                    add.params = list(size = size, jitter = jitter),  repel = TRUE)+
+              theme_minimal() +theme(axis.title.x = element_blank(),
+                                     axis.text.x = element_text(size = 10))+
+  stat_summary(fun.data = function(x) data.frame(y=round(mean(x)-(sd(x)*1.5),2), label = paste("=",round(mean(x)*100,2),"%")),size=3,
+               geom="text", color = "#7AD7F0") +scale_y_continuous(labels = scales::percent) 
+
+p2= mode.df %>%
+ ggboxplot(x ="ML Model", y = "AUC",merge = TRUE,rug = TRUE ,   color = "ML Model", shape = "ML Model",
+                    add.params = list(size = size, jitter = jitter),  repel = TRUE)+
+              theme_minimal() +theme(axis.title.x = element_blank(),
+                                     axis.text.x = element_text(size = 10))+
+  stat_summary(fun.data = function(x) data.frame(y=round(mean(x)-(sd(x)*1.5),2), label = paste("=",round(mean(x)*100,2),"%")),size=3,
+               geom="text", color = "#7AD7F0") +scale_y_continuous(labels = scales::percent) 
+ 
+  grid.arrange( 
+   
+   p1 + theme(legend.position="none") ,
+   p2 + theme(legend.position="none"),
+   ncol=1, top="Predictive Performance Evaluation"
+               ) 
+```
+
+```{r fig.align='center', cache=F,  warning=FALSE}
+
+p3= mode.df %>%
+ ggboxplot(x ="ML Model", y = "Sensitivity",merge = TRUE,rug = TRUE ,   color = "ML Model", shape = "ML Model",
+                    add.params = list(size = size, jitter = jitter),  repel = TRUE)+
+              theme_minimal() +theme(axis.title.x = element_blank(),
+                                     axis.text.x = element_text(size = 10))+
+  stat_summary(fun.data = function(x) data.frame(y=round(mean(x)-(sd(x)*1.5),2), label = paste("=",round(mean(x)*100,2),"%")),size=3,
+               geom="text", color = "#ADD8E6") +scale_y_continuous(labels = scales::percent) 
+
+p4= mode.df %>%
+ ggboxplot(x ="ML Model", y = "Specificity",merge = TRUE,rug = TRUE ,   color = "ML Model", shape = "ML Model",
+                    add.params = list(size = size, jitter = jitter),  repel = TRUE)+
+              theme_minimal() +theme(axis.title.x = element_blank(),
+                                     axis.text.x = element_text(size = 10))+
+  stat_summary(fun.data = function(x) data.frame(y=round(mean(x)-(sd(x)*1.5),2), label = paste("=",round(mean(x)*100,2),"%")),size=3,
+               geom="text", color = "#ADD8E6") +scale_y_continuous(labels = scales::percent) 
+ 
+  grid.arrange( 
+   
+   p3 + theme(legend.position="none") ,
+   p4 + theme(legend.position="none"),
+   ncol=1#, #top="Predictive Performance Evaluation"
+               ) 
+
+```
+
+
+
+```{r fig.align='center', cache=F,  warning=FALSE}
+
+p3= mode.df %>% mutate(PPV=Precision)  %>% 
+ ggboxplot(x ="ML Model", y = "PPV",merge = TRUE,rug = TRUE ,   color = "ML Model", shape = "ML Model",
+                    add.params = list(size = size, jitter = jitter),  repel = TRUE)+
+              theme_minimal() +theme(axis.title.x = element_blank(),
+                                     axis.text.x = element_text(size = 10))+
+  stat_summary(fun.data = function(x) data.frame(y=round(mean(x)-(sd(x)*1.5),2), label = paste("=",round(mean(x)*100,2),"%")),size=3,
+               geom="text", color = "#ADD8E6") +scale_y_continuous(labels = scales::percent) 
+
+p4= mode.df %>%
+ ggboxplot(x ="ML Model", y = "Logloss",merge = TRUE,rug = TRUE ,   color = "ML Model", shape = "ML Model",
+                    add.params = list(size = size, jitter = jitter),  repel = TRUE)+
+              theme_minimal() +theme(axis.title.x = element_blank(),
+                                     axis.text.x = element_text(size = 10))+
+  stat_summary(fun.data = function(x) data.frame(y=round(mean(x)-(sd(x)*1.5),2), label = paste("=",round(mean(x)*100,2),"%")),size=3,
+               geom="text", color = "#ADD8E6") +scale_y_continuous(labels = scales::percent) 
+ 
+  grid.arrange( 
+   
+   p3 + theme(legend.position="none") ,
+   p4 + theme(legend.position="none"),
+   ncol=1#, #top="Predictive Performance Evaluation"
+               ) 
+
+```
+
+##### Each model
+
+```{r fig.align='center', cache=F,  warning=FALSE}
+
+results_cross_validation <- function(h2o_model) {
+  h2o_model@model$cross_validation_metrics_summary %>% 
+    as.data.frame() %>% 
+    select(-mean, -sd) %>% 
+    t() %>% 
+    as.data.frame() %>% 
+    mutate_all(as.character) %>% 
+    mutate_all(as.numeric) %>% 
+    select(Accuracy = accuracy, 
+           
+           AUC = auc, 
+           Precision = precision, 
+           Specificity = specificity, 
+           Sensitivity = recall, 
+           Logloss = logloss) %>% 
+    return()
+  }
+
+
+# Model Performance by Graph: 
+theme_set(theme_minimal())
+
+plot_results <- function(df_results) {
+  df_results %>% 
+  gather(Metrics, Values) %>% 
+  ggplot(aes(Metrics, Values, fill = Metrics, color = Metrics)) +
+  geom_boxplot(alpha = 0.3, show.legend = FALSE) + 
+  theme(plot.margin = unit(c(1, 1, 1, 1), "cm")) +    
+  scale_y_continuous(labels = scales::percent) + 
+  facet_wrap(~ Metrics, scales = "free") + 
+  labs(title = "Model Performance by Some Criteria Selected", y = NULL)
+  }
+
+
+
+# Get model ids for all models in the AutoML Leaderboard
+model_ids <- filter(as.data.frame(lb$model_id), !str_detect(model_id, "Stacked|grid"))[, 1]
+# Use function:
+for (model_id in model_ids[1:length(model_ids)]) {
+ print(plot_results(results_cross_validation( h2o.getModel(model_id)) )+labs(subtitle = model_id))
+}
+
+
+```
+
+
+
+### Best ML Predicted Probability Analysis
+
+
+#### Density Plot
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+pred_actual = as_data_frame(
+  list(
+    `Predicted_probability` = h2o.predict(autoML@leader, train) %>% as.data.frame() %>% pull(Disengaged),
+    Actual = train %>% as.data.frame() %>% pull(y0)
+    )
+)
+
+ggdensity(pred_actual, x = "Predicted_probability",
+   add = "mean", rug = TRUE,
+   color = "Actual", fill = "Actual",
+   palette = c("#00AFBB", "#E7B800"))
+
+```
+
+
+
+#### Disengagement rate for top 20 % of the predicted probability
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+
+pred_actual %>% #group_by(Actual) %>% 
+  arrange(desc(Predicted_probability)) %>% 
+  filter(Predicted_probability > quantile(Predicted_probability, .80))%>%
+  group_by(`Actual`)%>%count()%>%
+  mutate(Basis=`Actual`)%>%
+  hchart("pie",innerSize="50%",hcaes(Basis, `n`)) %>% 
+    hc_tooltip(formatter = JS("function(){
+                                return  '<b>' + this.point.Basis+ ' : </b>( Frequency:' +this.y+', Percentage: '+Highcharts.numberFormat(this.percentage)+'%)'
+  }"),useHTML = FALSE)%>%hc_plotOptions(pie =list(dataLabels = list(enabled = TRUE,format="{point.Basis}: {point.y} ({point.percentage:.2f}%)")))%>%
+   hc_legend(align = "left", verticalAlign = "top",
+            layout = "vertical", x = 0, y = 100) 
+
+```
+
+#### Disengagement rate for top 15 % of the predicted probability
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+pred_actual %>% #group_by(Actual) %>% 
+  arrange(desc(Predicted_probability)) %>% 
+  filter(Predicted_probability > quantile(Predicted_probability, .85))%>%
+  group_by(`Actual`)%>%count()%>%
+  mutate(Basis=`Actual`)%>%
+  hchart("pie",innerSize="50%",hcaes(Basis, `n`)) %>% 
+    hc_tooltip(formatter = JS("function(){
+                                return  '<b>' + this.point.Basis+ ' : </b>( Frequency:' +this.y+', Percentage: '+Highcharts.numberFormat(this.percentage)+'%)'
+  }"),useHTML = FALSE)%>%hc_plotOptions(pie =list(dataLabels = list(enabled = TRUE,format="{point.Basis}: {point.y} ({point.percentage:.2f}%)")))%>%
+   hc_legend(align = "left", verticalAlign = "top",
+            layout = "vertical", x = 0, y = 100) 
+
+```
+
+
+#### Disengagement rate for top 10 % of the predicted probability
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+pred_actual %>% #group_by(Actual) %>% 
+  arrange(desc(Predicted_probability)) %>% 
+  filter(Predicted_probability > quantile(Predicted_probability, .90))%>%
+  group_by(`Actual`)%>%count()%>%
+  mutate(Basis=`Actual`)%>%
+  hchart("pie",innerSize="50%",hcaes(Basis, `n`)) %>% 
+    hc_tooltip(formatter = JS("function(){
+                                return  '<b>' + this.point.Basis+ ' : </b>( Frequency:' +this.y+', Percentage: '+Highcharts.numberFormat(this.percentage)+'%)'
+  }"),useHTML = FALSE)%>%hc_plotOptions(pie =list(dataLabels = list(enabled = TRUE,format="{point.Basis}: {point.y} ({point.percentage:.2f}%)")))%>%
+   hc_legend(align = "left", verticalAlign = "top",
+            layout = "vertical", x = 0, y = 100) 
+
+```
+
+
+### Best ML Detailed Performance
+
+
+#### Training data
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+pred_actual = as_data_frame(
+  list(
+    `Predicted_probability` = h2o.predict(autoML@leader, train) %>% as.data.frame() %>% pull(Disengaged),
+    Actual = train %>% as.data.frame() %>% pull(y0)
+    )
+)
+
+ggdensity(pred_actual, x = "Predicted_probability",
+   add = "mean", rug = TRUE,
+   color = "Actual", fill = "Actual",
+   palette = c("#00AFBB", "#E7B800"))
+```
+
+
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+h2o.performance(autoML@leader)%>%plot()
+autoML@leader
+
+```
+
+
+
+#### Out-of sample data (test)
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+pred_actual = as_data_frame(
+  list(
+    `Predicted_probability` = h2o.predict(autoML@leader, test) %>% as.data.frame() %>% pull(Disengaged),
+    Actual = test %>% as.data.frame() %>% pull(y0)
+    )
+)
+
+ggdensity(pred_actual, x = "Predicted_probability",
+   add = "mean", rug = TRUE,
+   color = "Actual", fill = "Actual",
+   palette = c("#00AFBB", "#E7B800"))
+```
+
+
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+
+h2o.performance(autoML@leader, newdata=test)%>%plot()
+pd_best <- h2o.predict(autoML@leader, test) %>% as.data.frame() %>% pull(Disengaged)
+
+h2o.performance(model = autoML@leader, newdata = test)
+
+```
+
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+h2o.confusionMatrix(autoML@leader)
+
+```
+
+
+
+
+
+
+
+### Model Explanation
+
+
+#### Variable Importance
+
+
+```{r fig.align='center', warning=FALSE, cache=F}
+lb <- autoML@leaderboard
+#print(lb, n = nrow(lb))
+# Get model ids for all models in the AutoML Leaderboard
+#model_ids <- as.data.frame(lb$model_id)[, 1]
+model_ids <- filter(as.data.frame(lb$model_id), !str_detect(model_id, "Stacked|grid"))[, 1]
+
+# View variable importance for the top 5 models (besides Stacked Ensemble)
+for (model_id in model_ids[1:length(model_ids)]) {
+  tryCatch(
+    expr = {
+        print(model_id)
+        if(!is.na(model_id)){
+           m <- h2o.getModel(model_id)
+           #h2o.varimp_plot(m,50 )
+           varimp <- h2o.varimp(m)
+
+          print(ggplot(varimp, aes(x = reorder(variable, -relative_importance), y = relative_importance)) +
+            geom_bar(stat = "identity", fill = "dodgerblue") +
+            xlab("Variable") + ylab("Relative Importance") +
+            theme(axis.text.x = element_text(angle = 45, hjust = 1)))
+        }
+       
+    },
+    error = function(e){},
+    warning = function(w){},
+    finally = { }
+)
+   
+   
+}
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+#### LIME (Local)
+
+LIME (See the paper: https://arxiv.org/abs/1602.04938 ) stands for **Local Interpretable Model-agnostic Explanations**, and is a method for explaining the Black-Box machine learning model classifiers (e.g. deep learning, stacked ensembles, random forest). LIME is used to determine which features contribute to the prediction (& by how much) for a single observation (i.e. local). The purpose of LIME is to explain the predictions of black box classifiers. What this means is that for any given prediction and any given classifier it is able to determine a small set of features in the original data that has driven the outcome of the prediction. To learn more about the methodology of lime read the paper and visit the repository of the original implementation.
+
+
+```{r fig.align='center', cache=F, warning=FALSE,  eval=F}
+model_ids <- filter(as.data.frame(lb$model_id), !str_detect(model_id, "Stacked|grid"))[, 1]
+
+explainer <- as.data.frame(train)%>%select(c(sub("-", ".", x))) %>%
+   # select(-Selected) %>%
+    lime(
+        model           = h2o.getModel(model_ids[1]),
+        n_bins          = 5
+    )
+
+
+explanation <-  as.data.frame(test)%>%select(c(sub("-", ".", x),y)) %>% 
+    group_by(!!y) %>% 
+    sample_n(10) %>% ungroup()  %>% 
+    select(!!sub("-", ".", x)) %>%
+    lime::explain(
+        explainer = explainer,
+        labels          = "Disengaged",
+        # number of features to be returned
+        n_features = 5,
+        # number of localized linear models
+        n_permutations = 5000
+    )
+
+
+plot_explanations(explanation)
+
+for (i in 1:10){
+  print(explanation %>%
+      filter(case == i)%>%
+      plot_features())
+}
+
+
+```
+
+
+
+#### Partial Dependence Plot
+Partial dependence plot gives a graphical depiction of the marginal effect of a variable on the response. The effect of a variable is measured in change in the mean response. Note: Unlike randomForest's partialPlot when plotting partial dependence the mean response (probabilities) is returned rather than the mean of the log class probability.
+
+```{r fig.align='center', cache=F, warning=FALSE, eval=T}
+
+model_ids <- filter(as.data.frame(lb$model_id), !str_detect(model_id, "Stacked|grid"))[, 1]
+ h2o.partialPlot(h2o.getModel(model_ids[1]), data =  train)
+
+```
+    
+    
+
+
+### Ensemble Exploration
+
+To understand how the ensemble works, let’s take a peek inside the Stacked Ensemble “All Models” model. The “All Models” ensemble is an ensemble of all of the individual models in the AutoML run. This is often the top performing model on the leaderboard.
+
+
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE, eval=T}
+
+# Get model ids for all models in the AutoML Leaderboard
+model_ids <- as.data.frame(autoML@leaderboard$model_id)[, 1]
+# Get the 'All Models' Stacked Ensemble model
+se <- h2o.getModel(grep("StackedEnsemble_AllModels", model_ids, value = TRUE)[1])
+# Get the Stacked Ensemble metalearner model
+metalearner <- h2o.getModel(se@model$metalearner$name)
+
+
+#h2o.varimp(metalearner)
+h2o.varimp_plot(metalearner)
+
+```
+
+
+Examine the variable importance of the metalearner (combiner) algorithm in the ensemble. This shows us how much each base learner is contributing to the ensemble. The AutoML Stacked Ensembles use the default metalearner algorithm (GLM with non-negative weights), so the variable importance of the metalearner is actually the standardized coefficient magnitudes of the GLM.
+
+We can also plot the base learner contributions to the ensemble.
+
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE, eval=T}
+
+h2o.varimp_plot(metalearner)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+## 1 day Disengagement | Youth /Peads
+
+```{r fig.align='center',warning=FALSE, cache=F}
+y='y0'
+x = c(X)
+weights_column = 'y0_weight'
+main.df = model.df%>%filter(!is.na(`y0` )  & Cohort=='Minor')%>%select(c(y,x, fold_id, weights_column))
+
+#main.df[is.na(main.df)] ="NA"
+#write.csv( model.df%>%mutate(person_id=person_id+14563)%>%filter(fold_id ==2 ), file ="synthetic_df.csv", row.names = FALSE)
+
+h2o_frame <- as.h2o(main.df)
+
+train <- h2o.assign(h2o_frame[h2o_frame$fold_id != k_folds, ],key = "train")
+test <- h2o.assign(h2o_frame[h2o_frame$fold_id == k_folds, ],key = "test")
+
+print(dim(train[[1]]))
+
+print(dim(test[[2]]))
+
+
+```
+
+
+
+```{r fig.align='center', fig.width=6, warning=FALSE, cache=F, results='hide'}
+one.month.h2o <- h2o.automl(x = x, y = y, training_frame = train, leaderboard_frame = test,  fold_column = fold_column, balance_classes=balance_classes,
+    stopping_metric =stopping_metric, stopping_rounds = stopping_rounds, stopping_tolerance = stopping_tolerance, max_models = max_models, 
+    max_runtime_secs = 60 * max_runtime_mins * max_models, seed = 1, sort_metric = sort_metric, 
+    project_name=paste0(y,'_', format(Sys.time(), "%H%M%S")), 
+    include_algos=include_algos, keep_cross_validation_fold_assignment= T,
+    keep_cross_validation_predictions=T, verbosity = verbosity, 
+    weights_column = weights_column,
+    max_runtime_secs_per_model = 60 * max_runtime_mins)
+autoML=one.month.h2o
+
+```
+
+
+```{r fig.align='center', fig.width=6, warning=FALSE, cache=F, results='hide', eval=T}
+
+unlink("exports/y0_1days_minor_IIT", recursive = TRUE)
+for (i in 1:nrow(autoML@leaderboard)) {
+   model_id <- as.character(autoML@leaderboard[i, "model_id"])
+   model_auc <-autoML@leaderboard[i, "auc"]
+   model_rank <- i
+   model <- h2o.getModel(model_id)
+   h2o.saveModel(model, path = paste0("exports/y0_1days_minor_IIT/", model_rank, "_", model_id, "_auc_", round(model_auc, 3)))
+  
+}
+
+
+```
+
+
+
+
+### Training Scoring History
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+lb <- h2o.get_leaderboard(object = autoML, extra_columns = "ALL")
+# Get model ids for all models in the AutoML Leaderboard
+model_ids <- filter(as.data.frame(lb), !str_detect(model_id, "Stacked|grid"))[, 1]
+# Use function:
+for (model_id in model_ids[1:length(model_ids)]) {
+ tryCatch(
+    expr = {
+        print(model_id)
+        if(!is.na(model_id)){
+           plot( h2o.getModel(model_id),
+             timestep = "duration",
+             metric = "logloss")
+           
+        }
+       
+    },
+    error = function(e){},
+    warning = function(w){},
+    finally = { }
+)
+}
+
+
+```
+
+
+### K-Folds CV Performance
+#### Summary Table
+
+```{r fig.align='center', fig.width=6, warning=FALSE, cache=F}
+lb <- h2o.get_leaderboard(object = autoML, extra_columns = "ALL")
+
+Table.weighted= flextable(lb%>% as.data.frame())%>% 
+   add_header_row( values = c( 'Evaluation Metric on test data'), colwidths = c(10) )%>%
+  theme_zebra() %>% 
+  theme_booktabs(bold_header = TRUE) %>% bg(., i= 1, part = "header", bg = "#f2f9ff") %>% 
+   fontsize(size = 9, part = "all") %>% 
+  set_table_properties(width = 1, layout = "autofit")# For pretty word output
+ Table.weighted
+```
+
+
+
+
+#### Evaluation Metric Plots
+##### All Models
+
+```{r fig.align='center', cache=F,  warning=FALSE}
+lb <- autoML@leaderboard
+
+
+
+# Get model ids for all models in the AutoML Leaderboard
+model_ids <- filter(as.data.frame(lb$model_id), !str_detect(model_id, "Stacked|grid"))[, 1]
+# Use function:
+
+l <- list()
+for (model_id in model_ids[1:length(model_ids)]) {
+  dd=results_cross_validation( h2o.getModel(model_id))
+  dd$Model=model_id
+  dd$cv=rownames_to_column(dd, var = "cv")$cv
+  l[[model_id]]=dd
+}
+
+
+theme_set(theme_minimal())
+mode.df=do.call(rbind,l)%>%  
+  separate(Model, c("ML Model", "Postfix"), "_AutoML")%>%
+  mutate(`ML Model`= str_replace(`ML Model`, "XGBoost", "XGB"))%>%
+  mutate(`ML Model`=str_replace(`ML Model`, "DeepLearning", "DL"))%>%
+  filter(!str_detect(`ML Model`, "XRT"))
+
+
+angle=10;size = 0.8; jitter = 0.3;
+
+p1= mode.df %>%
+ ggboxplot(x ="ML Model", y = "Accuracy",merge = TRUE,rug = TRUE ,   color = "ML Model", shape = "ML Model",
+                    add.params = list(size = size, jitter = jitter),  repel = TRUE)+
+              theme_minimal() +theme(axis.title.x = element_blank(),
+                                     axis.text.x = element_text(size = 10))+
+  stat_summary(fun.data = function(x) data.frame(y=round(mean(x)-(sd(x)*1.5),2), label = paste("=",round(mean(x)*100,2),"%")),size=3,
+               geom="text", color = "#7AD7F0") +scale_y_continuous(labels = scales::percent) 
+
+p2= mode.df %>%
+ ggboxplot(x ="ML Model", y = "AUC",merge = TRUE,rug = TRUE ,   color = "ML Model", shape = "ML Model",
+                    add.params = list(size = size, jitter = jitter),  repel = TRUE)+
+              theme_minimal() +theme(axis.title.x = element_blank(),
+                                     axis.text.x = element_text(size = 10))+
+  stat_summary(fun.data = function(x) data.frame(y=round(mean(x)-(sd(x)*1.5),2), label = paste("=",round(mean(x)*100,2),"%")),size=3,
+               geom="text", color = "#7AD7F0") +scale_y_continuous(labels = scales::percent) 
+ 
+  grid.arrange( 
+   
+   p1 + theme(legend.position="none") ,
+   p2 + theme(legend.position="none"),
+   ncol=1, top="Predictive Performance Evaluation"
+               ) 
+```
+
+```{r fig.align='center', cache=F,  warning=FALSE}
+
+p3= mode.df %>%
+ ggboxplot(x ="ML Model", y = "Sensitivity",merge = TRUE,rug = TRUE ,   color = "ML Model", shape = "ML Model",
+                    add.params = list(size = size, jitter = jitter),  repel = TRUE)+
+              theme_minimal() +theme(axis.title.x = element_blank(),
+                                     axis.text.x = element_text(size = 10))+
+  stat_summary(fun.data = function(x) data.frame(y=round(mean(x)-(sd(x)*1.5),2), label = paste("=",round(mean(x)*100,2),"%")),size=3,
+               geom="text", color = "#ADD8E6") +scale_y_continuous(labels = scales::percent) 
+
+p4= mode.df %>%
+ ggboxplot(x ="ML Model", y = "Specificity",merge = TRUE,rug = TRUE ,   color = "ML Model", shape = "ML Model",
+                    add.params = list(size = size, jitter = jitter),  repel = TRUE)+
+              theme_minimal() +theme(axis.title.x = element_blank(),
+                                     axis.text.x = element_text(size = 10))+
+  stat_summary(fun.data = function(x) data.frame(y=round(mean(x)-(sd(x)*1.5),2), label = paste("=",round(mean(x)*100,2),"%")),size=3,
+               geom="text", color = "#ADD8E6") +scale_y_continuous(labels = scales::percent) 
+ 
+  grid.arrange( 
+   
+   p3 + theme(legend.position="none") ,
+   p4 + theme(legend.position="none"),
+   ncol=1#, #top="Predictive Performance Evaluation"
+               ) 
+
+```
+
+
+
+```{r fig.align='center', cache=F,  warning=FALSE}
+
+p3= mode.df %>% mutate(PPV=Precision)  %>% 
+ ggboxplot(x ="ML Model", y = "PPV",merge = TRUE,rug = TRUE ,   color = "ML Model", shape = "ML Model",
+                    add.params = list(size = size, jitter = jitter),  repel = TRUE)+
+              theme_minimal() +theme(axis.title.x = element_blank(),
+                                     axis.text.x = element_text(size = 10))+
+  stat_summary(fun.data = function(x) data.frame(y=round(mean(x)-(sd(x)*1.5),2), label = paste("=",round(mean(x)*100,2),"%")),size=3,
+               geom="text", color = "#ADD8E6") +scale_y_continuous(labels = scales::percent) 
+
+p4= mode.df %>%
+ ggboxplot(x ="ML Model", y = "Logloss",merge = TRUE,rug = TRUE ,   color = "ML Model", shape = "ML Model",
+                    add.params = list(size = size, jitter = jitter),  repel = TRUE)+
+              theme_minimal() +theme(axis.title.x = element_blank(),
+                                     axis.text.x = element_text(size = 10))+
+  stat_summary(fun.data = function(x) data.frame(y=round(mean(x)-(sd(x)*1.5),2), label = paste("=",round(mean(x)*100,2),"%")),size=3,
+               geom="text", color = "#ADD8E6") +scale_y_continuous(labels = scales::percent) 
+ 
+  grid.arrange( 
+   
+   p3 + theme(legend.position="none") ,
+   p4 + theme(legend.position="none"),
+   ncol=1#, #top="Predictive Performance Evaluation"
+               ) 
+
+```
+
+##### Each model
+
+```{r fig.align='center', cache=F,  warning=FALSE}
+
+results_cross_validation <- function(h2o_model) {
+  h2o_model@model$cross_validation_metrics_summary %>% 
+    as.data.frame() %>% 
+    select(-mean, -sd) %>% 
+    t() %>% 
+    as.data.frame() %>% 
+    mutate_all(as.character) %>% 
+    mutate_all(as.numeric) %>% 
+    select(Accuracy = accuracy, 
+           
+           AUC = auc, 
+           Precision = precision, 
+           Specificity = specificity, 
+           Sensitivity = recall, 
+           Logloss = logloss) %>% 
+    return()
+  }
+
+
+# Model Performance by Graph: 
+theme_set(theme_minimal())
+
+plot_results <- function(df_results) {
+  df_results %>% 
+  gather(Metrics, Values) %>% 
+  ggplot(aes(Metrics, Values, fill = Metrics, color = Metrics)) +
+  geom_boxplot(alpha = 0.3, show.legend = FALSE) + 
+  theme(plot.margin = unit(c(1, 1, 1, 1), "cm")) +    
+  scale_y_continuous(labels = scales::percent) + 
+  facet_wrap(~ Metrics, scales = "free") + 
+  labs(title = "Model Performance by Some Criteria Selected", y = NULL)
+  }
+
+
+
+# Get model ids for all models in the AutoML Leaderboard
+model_ids <- filter(as.data.frame(lb$model_id), !str_detect(model_id, "Stacked|grid"))[, 1]
+# Use function:
+for (model_id in model_ids[1:length(model_ids)]) {
+ print(plot_results(results_cross_validation( h2o.getModel(model_id)) )+labs(subtitle = model_id))
+}
+
+
+```
+
+
+
+### Best ML Predicted Probability Analysis
+
+
+#### Density Plot
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+pred_actual = as_data_frame(
+  list(
+    `Predicted_probability` = h2o.predict(autoML@leader, train) %>% as.data.frame() %>% pull(Disengaged),
+    Actual = train %>% as.data.frame() %>% pull(y0)
+    )
+)
+
+ggdensity(pred_actual, x = "Predicted_probability",
+   add = "mean", rug = TRUE,
+   color = "Actual", fill = "Actual",
+   palette = c("#00AFBB", "#E7B800"))
+
+```
+
+
+
+#### Disengagement rate for top 20 % of the predicted probability
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+
+pred_actual %>% #group_by(Actual) %>% 
+  arrange(desc(Predicted_probability)) %>% 
+  filter(Predicted_probability > quantile(Predicted_probability, .80))%>%
+  group_by(`Actual`)%>%count()%>%
+  mutate(Basis=`Actual`)%>%
+  hchart("pie",innerSize="50%",hcaes(Basis, `n`)) %>% 
+    hc_tooltip(formatter = JS("function(){
+                                return  '<b>' + this.point.Basis+ ' : </b>( Frequency:' +this.y+', Percentage: '+Highcharts.numberFormat(this.percentage)+'%)'
+  }"),useHTML = FALSE)%>%hc_plotOptions(pie =list(dataLabels = list(enabled = TRUE,format="{point.Basis}: {point.y} ({point.percentage:.2f}%)")))%>%
+   hc_legend(align = "left", verticalAlign = "top",
+            layout = "vertical", x = 0, y = 100) 
+
+```
+
+#### Disengagement rate for top 15 % of the predicted probability
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+pred_actual %>% #group_by(Actual) %>% 
+  arrange(desc(Predicted_probability)) %>% 
+  filter(Predicted_probability > quantile(Predicted_probability, .85))%>%
+  group_by(`Actual`)%>%count()%>%
+  mutate(Basis=`Actual`)%>%
+  hchart("pie",innerSize="50%",hcaes(Basis, `n`)) %>% 
+    hc_tooltip(formatter = JS("function(){
+                                return  '<b>' + this.point.Basis+ ' : </b>( Frequency:' +this.y+', Percentage: '+Highcharts.numberFormat(this.percentage)+'%)'
+  }"),useHTML = FALSE)%>%hc_plotOptions(pie =list(dataLabels = list(enabled = TRUE,format="{point.Basis}: {point.y} ({point.percentage:.2f}%)")))%>%
+   hc_legend(align = "left", verticalAlign = "top",
+            layout = "vertical", x = 0, y = 100) 
+
+```
+
+
+#### Disengagement rate for top 10 % of the predicted probability
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+pred_actual %>% #group_by(Actual) %>% 
+  arrange(desc(Predicted_probability)) %>% 
+  filter(Predicted_probability > quantile(Predicted_probability, .90))%>%
+  group_by(`Actual`)%>%count()%>%
+  mutate(Basis=`Actual`)%>%
+  hchart("pie",innerSize="50%",hcaes(Basis, `n`)) %>% 
+    hc_tooltip(formatter = JS("function(){
+                                return  '<b>' + this.point.Basis+ ' : </b>( Frequency:' +this.y+', Percentage: '+Highcharts.numberFormat(this.percentage)+'%)'
+  }"),useHTML = FALSE)%>%hc_plotOptions(pie =list(dataLabels = list(enabled = TRUE,format="{point.Basis}: {point.y} ({point.percentage:.2f}%)")))%>%
+   hc_legend(align = "left", verticalAlign = "top",
+            layout = "vertical", x = 0, y = 100) 
+
+```
+
+
+### Best ML Detailed Performance
+
+
+#### Training data
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+pred_actual = as_data_frame(
+  list(
+    `Predicted_probability` = h2o.predict(autoML@leader, train) %>% as.data.frame() %>% pull(Disengaged),
+    Actual = train %>% as.data.frame() %>% pull(y0)
+    )
+)
+
+ggdensity(pred_actual, x = "Predicted_probability",
+   add = "mean", rug = TRUE,
+   color = "Actual", fill = "Actual",
+   palette = c("#00AFBB", "#E7B800"))
+```
+
+
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+h2o.performance(autoML@leader)%>%plot()
+autoML@leader
+
+```
+
+
+
+#### Out-of sample data (test)
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+pred_actual = as_data_frame(
+  list(
+    `Predicted_probability` = h2o.predict(autoML@leader, test) %>% as.data.frame() %>% pull(Disengaged),
+    Actual = test %>% as.data.frame() %>% pull(y0)
+    )
+)
+
+ggdensity(pred_actual, x = "Predicted_probability",
+   add = "mean", rug = TRUE,
+   color = "Actual", fill = "Actual",
+   palette = c("#00AFBB", "#E7B800"))
+```
+
+
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+
+h2o.performance(autoML@leader, newdata=test)%>%plot()
+pd_best <- h2o.predict(autoML@leader, test) %>% as.data.frame() %>% pull(Disengaged)
+
+h2o.performance(model = autoML@leader, newdata = test)
+
+```
+
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE}
+h2o.confusionMatrix(autoML@leader)
+
+```
+
+
+
+
+
+
+
+### Model Explanation
+
+
+#### Variable Importance
+
+
+```{r fig.align='center', warning=FALSE, cache=F}
+lb <- autoML@leaderboard
+#print(lb, n = nrow(lb))
+# Get model ids for all models in the AutoML Leaderboard
+#model_ids <- as.data.frame(lb$model_id)[, 1]
+model_ids <- filter(as.data.frame(lb$model_id), !str_detect(model_id, "Stacked|grid"))[, 1]
+
+# View variable importance for the top 5 models (besides Stacked Ensemble)
+for (model_id in model_ids[1:length(model_ids)]) {
+  tryCatch(
+    expr = {
+        print(model_id)
+        if(!is.na(model_id)){
+           m <- h2o.getModel(model_id)
+           #h2o.varimp_plot(m,50 )
+           varimp <- h2o.varimp(m)
+
+          print(ggplot(varimp, aes(x = reorder(variable, -relative_importance), y = relative_importance)) +
+            geom_bar(stat = "identity", fill = "dodgerblue") +
+            xlab("Variable") + ylab("Relative Importance") +
+            theme(axis.text.x = element_text(angle = 45, hjust = 1)))
+        }
+       
+    },
+    error = function(e){},
+    warning = function(w){},
+    finally = { }
+)
+   
+   
+}
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+#### LIME (Local)
+
+LIME (See the paper: https://arxiv.org/abs/1602.04938 ) stands for **Local Interpretable Model-agnostic Explanations**, and is a method for explaining the Black-Box machine learning model classifiers (e.g. deep learning, stacked ensembles, random forest). LIME is used to determine which features contribute to the prediction (& by how much) for a single observation (i.e. local). The purpose of LIME is to explain the predictions of black box classifiers. What this means is that for any given prediction and any given classifier it is able to determine a small set of features in the original data that has driven the outcome of the prediction. To learn more about the methodology of lime read the paper and visit the repository of the original implementation.
+
+
+```{r fig.align='center', cache=F, warning=FALSE,  eval=F}
+model_ids <- filter(as.data.frame(lb$model_id), !str_detect(model_id, "Stacked|grid"))[, 1]
+
+explainer <- as.data.frame(train)%>%select(c(sub("-", ".", x))) %>%
+   # select(-Selected) %>%
+    lime(
+        model           = h2o.getModel(model_ids[1]),
+        n_bins          = 5
+    )
+
+
+explanation <-  as.data.frame(test)%>%select(c(sub("-", ".", x),y)) %>% 
+    group_by(!!y) %>% 
+    sample_n(10) %>% ungroup()  %>% 
+    select(!!sub("-", ".", x)) %>%
+    lime::explain(
+        explainer = explainer,
+        labels          = "Disengaged",
+        # number of features to be returned
+        n_features = 5,
+        # number of localized linear models
+        n_permutations = 5000
+    )
+
+
+plot_explanations(explanation)
+
+for (i in 1:10){
+  print(explanation %>%
+      filter(case == i)%>%
+      plot_features())
+}
+
+
+```
+
+
+
+#### Partial Dependence Plot
+Partial dependence plot gives a graphical depiction of the marginal effect of a variable on the response. The effect of a variable is measured in change in the mean response. Note: Unlike randomForest's partialPlot when plotting partial dependence the mean response (probabilities) is returned rather than the mean of the log class probability.
+
+```{r fig.align='center', cache=F, warning=FALSE, eval=T}
+
+model_ids <- filter(as.data.frame(lb$model_id), !str_detect(model_id, "Stacked|grid"))[, 1]
+ h2o.partialPlot(h2o.getModel(model_ids[1]), data =  train)
+
+```
+    
+    
+
+
+### Ensemble Exploration
+
+To understand how the ensemble works, let’s take a peek inside the Stacked Ensemble “All Models” model. The “All Models” ensemble is an ensemble of all of the individual models in the AutoML run. This is often the top performing model on the leaderboard.
+
+
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE, eval=T}
+
+# Get model ids for all models in the AutoML Leaderboard
+model_ids <- as.data.frame(autoML@leaderboard$model_id)[, 1]
+# Get the 'All Models' Stacked Ensemble model
+se <- h2o.getModel(grep("StackedEnsemble_AllModels", model_ids, value = TRUE)[1])
+# Get the Stacked Ensemble metalearner model
+metalearner <- h2o.getModel(se@model$metalearner$name)
+
+
+#h2o.varimp(metalearner)
+h2o.varimp_plot(metalearner)
+
+```
+
+
+Examine the variable importance of the metalearner (combiner) algorithm in the ensemble. This shows us how much each base learner is contributing to the ensemble. The AutoML Stacked Ensembles use the default metalearner algorithm (GLM with non-negative weights), so the variable importance of the metalearner is actually the standardized coefficient magnitudes of the GLM.
+
+We can also plot the base learner contributions to the ensemble.
+
+
+```{r fig.align='center', cache=F, fig.width=6, warning=FALSE, eval=T}
+
+h2o.varimp_plot(metalearner)
+
+```
+
+
+
+
+
+
+```{r}
+currentTime <- Sys.time()
+print(currentTime)
+```
+
+
+
+
+
+
