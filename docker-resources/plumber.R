@@ -1,6 +1,7 @@
 # libraries for the model
 library(tidyverse)
 library(h2o)
+library(RCurl)
 
 # libraries used in the API
 library(plumber)
