@@ -153,8 +153,8 @@ from flat_hiv_summary_v15b as fs
     left join amrs.location l
         on fs.location_id = l.location_id
             and l.retired = 0
-    -- If a patient in enrolled in PTMCT, they are also enrolled in antenatal care
-    -- Currently, we only keep the PTMCT record
+    -- If a patient in enrolled in PMTCT, they are also enrolled in antenatal care
+    -- Currently, we only keep the PMTCT record
     left join etl.program_visit_map pvm
                 on pvm.visit_type_id = fs.visit_type
                     and pvm.voided is null
