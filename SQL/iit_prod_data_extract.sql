@@ -153,16 +153,12 @@ from flat_hiv_summary_v15b as fs
     left join amrs.location l
         on fs.location_id = l.location_id
             and l.retired = 0
-    -- only include the program from the most recent program type
-    -- currently, we assume there is only one program per patient visit
+    -- If a patient in enrolled in PTMCT, they are also enrolled in antenatal care
+    -- Currently, we only keep the PTMCT record
     left join etl.program_visit_map pvm
                 on pvm.visit_type_id = fs.visit_type
                     and pvm.voided is null
-                    and pvm.date_created = (
-                        select max(date_created)
-                        from etl.program_visit_map pvm_i
-                        where pvm.visit_type_id = fs.visit_type
-                    )
+                    and pvm.program_type_id != 42
     left join amrs.program program
         on pvm.program_type_id = program.program_id
             and program.retired = 0
