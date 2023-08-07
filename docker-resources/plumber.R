@@ -130,7 +130,7 @@ function(
     )
 
   # add the rows from the prediction_result to the ml_weekly_predictions table
-  # DBI::dbAppendTable(my_pool, SQL('predictions.ml_weekly_predictions'), prediction_result)
+  DBI::dbAppendTable(my_pool, SQL('predictions.ml_weekly_predictions'), prediction_result)
 
   # return the result so the API returns *something*
   prediction_result
