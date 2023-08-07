@@ -60,7 +60,15 @@ begin
         timestampdiff(YEAR, p.birthdate, baseline.encounter_datetime) as Age_baseline,
         p.gender as Gender_baseline,
         null as Marital_status_baseline,
-        round(baseline.weight / ((baseline.height / 100) * (baseline.height / 100)), 2) as BMI_baseline,
+        case
+            when baseline.weight is null or baseline.height is null or baseline.weight < 1 or baseline.height < 1
+                then null
+            when round(baseline.weight / ((baseline.height / 100) * (baseline.height / 100)), 2) < 5.0
+                then null
+            when round(baseline.weight / ((baseline.height / 100) * (baseline.height / 100)), 2) > 60.0
+                then null
+            else round(baseline.weight / ((baseline.height / 100) * (baseline.height / 100)), 2)
+        end as BMI,
         null as Travel_time_baseline,
         baseline.cur_who_stage as WHO_staging_baseline,
         if(baseline.vl_resulted < 1000, 1, 0) as VL_suppression_baseline,
@@ -69,7 +77,7 @@ begin
         baseline.cur_arv_line as Regimen_Line_baseline,
         coalesce(baseline.is_pregnant, 0) as Pregnancy_baseline,
         case
-            when baseline.location_id in (55, 315, 19, 230, 26, 23, 319, 130, 313, 9, 78, 310, 20, 312, 12, 321, 8, 341)
+            when baseline.location_id in (55, 315, 19, 230, 26, 23, 319, 130, 313, 9, 342, 78, 310, 20, 312, 12, 321, 8, 341, 19, 230)
                 then 'Urban'
             when baseline.location_id in (65, 314, 64, 83, 316, 90, 135, 106, 86, 336, 91, 320, 74, 76, 79, 100, 311, 75)
                 then 'Rural'
