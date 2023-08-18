@@ -116,3 +116,159 @@ X=c(
 ### Model to use?
 
 2_StackedEnsemble_BestOfFamily_1_AutoML_8_20230726_142520_auc_0.704
+
+
+## V7
+
+
+Version 7 of the model is trained using 2 cohorts of datasets:
+
+* Adult	88,809	(93.383876%)
+* Minor	6,292	(6.616124%)
+
+With these changes, the cross-validated AUC has increased from ~70 to ~77
+
+Some predictors have been added while others have been removed.
+
+### New predictors
+
+Here is a list of the new predictors that have been added
+
+```
+      'Month',
+      'num_1day_defaults_last_3visits',
+      'num_7days_defaults_last_3visits',
+      'num_1month_defaults_last_3visits'
+```
+
+
+Please see the util files on how these variables are define
+
+```
+      Month = as.factor(as.numeric(format(as.Date(RTC_Date), "%m")))
+
+      num_1day_defaults_last_3visits = as.double(lag(rollapplyr(`disengagement-1day_bin`, 3, sum, partial =TRUE),order_by = Encounter_ID)),
+      num_1day_defaults_last_3visits = if_else(is.na(num_1day_defaults_last_3visits), 0, num_1day_defaults_last_3visits),
+      
+      num_7days_defaults_last_3visits = as.double(lag(rollapplyr(`disengagement-7days_bin`, 3, sum, partial =TRUE),order_by = Encounter_ID)),
+      num_7days_defaults_last_3visits = if_else(is.na(num_7days_defaults_last_3visits), 0, num_7days_defaults_last_3visits),
+      
+      num_1month_defaults_last_3visits = as.double(lag(rollapplyr(`disengagement-1month_bin`, 3, sum, partial =TRUE),order_by = Encounter_ID)),
+      num_1month_defaults_last_3visits = if_else(is.na(num_1month_defaults_last_3visits), 0, num_1month_defaults_last_3visits),
+       
+```
+
+### Removed predictors
+
+
+Here is a list of the old predictors that have been removed
+
+```
+      'VL_suppression',
+      'num_2wks_defaults_last_3visits_NA'
+```
+
+
+
+### All predictors
+
+Finally here is a list of all predictors:
+
+```
+
+
+X=c(
+  
+  c(    'Age','Age_NA', 
+        'Gender' ,  
+        'Duration_in_HIV_care', 'Duration_in_HIV_care_NA',  
+        'BMI', 'BMI_NA',
+        #'Days_to_Start_of_ART', 'Days_to_Start_of_ART_NA', 
+        'WHO_staging','WHO_staging_NA',
+        'Viral_Load_log10', 'Viral_Load_log10_NA', # REMOVED (V7) 'VL_suppression', 
+        'Days_Since_Last_VL',
+        'HIV_disclosure','HIV_disclosure_NA', 
+        'Regimen_Line', 'Regimen_Line_NA',  
+        'Pregnancy',
+        'CD4','CD4_NA', 'Days_Since_Last_CD4',
+        "Encounter_Type_Class",
+        'ART_regimen',
+        'Visit_Number', 
+        'Days_defaulted_in_prev_enc', 'Days_defaulted_in_prev_enc_NA',
+         'num_2wks_defaults_last_3visits', # REMOVED (V7) 'num_2wks_defaults_last_3visits_NA',
+        'ever_defaulted_by_1m_in_last_1year','ever_defaulted_by_1m_in_last_1year_NA',
+         'ever_defaulted_by_1m_in_last_2year','ever_defaulted_by_1m_in_last_2year_NA',
+        
+        # Baseline
+        'Age_baseline',
+        'Gender_baseline' ,  
+        'BMI_baseline',
+        'WHO_staging_baseline',
+        'VL_suppression_baseline', 
+        'Viral_Load_log10_baseline',
+        'HIV_disclosure_baseline',
+        'Regimen_Line_baseline', 
+        'Pregnancy_baseline',
+        'CD4_baseline',
+        "Clinic_Name_baseline", 
+        'ART_regimen_baseline',
+        
+        # New Vars (V6)
+      'ART_Adherence',
+      'HIV_disclosure_stage',
+      'Clinic_County',
+      'Clinic_Name',
+      'Program_Name',     
+      'TB_screening',
+      'TB_Test_Result', 
+      'On_TB_TX',
+      'On_IPT',
+      'CA_CX_Screening',
+      'CA_CX_Screening_Result',
+      
+      # New Var (V7)
+      'Month',
+      'num_1day_defaults_last_3visits',
+      'num_7days_defaults_last_3visits',
+      'num_1month_defaults_last_3visits'
+      
+        
+        
+    
+    )
+  
+  
+)
+
+
+```
+
+
+### Model to use?
+
+#### Adult Model
+
+IIT-Prediction/model/V7/y0_1days_adult_IIT/1_StackedEnsemble_BestOfFamily_1_AutoML_1_20230812_150159_auc_0.775
+
+Note: Please remember to factorize all character predictors before scoring
+
+```
+clean.df= clean.long.df %>% 
+      mutate_if(is.character, as.factor)   
+```
+
+
+### Minor Model
+
+IIT-Prediction/model/V7/y0_1day_minor_IIT/1_StackedEnsemble_BestOfFamily_1_AutoML_2_20230813_03957_auc_0.734
+
+Note: Please remember to factorize all character predictors before scoring as shown below
+
+```
+clean.df= clean.long.df %>% 
+      mutate_if(is.character, as.factor)   
+```
+
+### Monitoring
+
+Please save logs especially warning logs which we can use to track any drift in concept or bad variables.
