@@ -1,54 +1,124 @@
 -- ML query
 -- Calculate rolling default numbers
-with num_2wk_defaults_last_3_visits as (
+with num_1day_defaults_last_3_visits as (
     select
         dd1.person_id,
         dd1.encounter_id,
         dd1.visit_number,
-        if(dd2.days_defaulted_last_encounter >= 14, 1, 0) +
-        if(dd3.days_defaulted_last_encounter >= 14, 1, 0) +
-        if(dd4.days_defaulted_last_encounter >= 14, 1, 0) as num_2wks_defaults_last_3visits
+        case
+            when dd1.days_defaulted_last_encounter is null or
+                 dd2.days_defaulted_last_encounter is null or
+                 dd3.days_defaulted_last_encounter is null
+                then null
+            else
+                if(dd1.days_defaulted_last_encounter >= 1, 1, 0) +
+                if(dd2.days_defaulted_last_encounter >= 1, 1, 0) +
+                if(dd3.days_defaulted_last_encounter >= 1, 1, 0)
+        end as num_1day_defaults_last_3_visits
     from predictions.flat_ml_days_defaulted dd1
              left join predictions.flat_ml_days_defaulted dd2
                        on dd2.person_id = dd1.person_id
-                           and dd2.encounter_id = dd1.encounter_id
                            and dd2.visit_number = dd1.visit_number - 1
              left join predictions.flat_ml_days_defaulted dd3
                        on dd3.person_id = dd2.person_id
-                           and dd3.encounter_id = dd2.encounter_id
                            and dd3.visit_number = dd2.visit_number - 1
-             left join predictions.flat_ml_days_defaulted dd4
-                       on dd4.person_id = dd3.person_id
-                           and dd4.encounter_id = dd3.encounter_id
-                           and dd4.visit_number = dd3.visit_number - 1
 ),
-defaults_by_days as (
-    select
-        dd.person_id,
-        dd.encounter_id,
-        encounter_date,
-        max(dd.days_defaulted_last_encounter) as days_defaulted
-    from predictions.flat_ml_days_defaulted dd
-    group by dd.person_id, encounter_date
- )
+     num_7day_defaults_last_3_visits as (
+         select
+             dd1.person_id,
+             dd1.encounter_id,
+             dd1.visit_number,
+             case
+                when dd1.days_defaulted_last_encounter is null or
+                     dd2.days_defaulted_last_encounter is null or
+                     dd3.days_defaulted_last_encounter is null
+                    then null
+                else
+                    if(dd1.days_defaulted_last_encounter >= 7, 1, 0) +
+                    if(dd2.days_defaulted_last_encounter >= 7, 1, 0) +
+                    if(dd3.days_defaulted_last_encounter >= 7, 1, 0)
+            end as num_7day_defaults_last_3_visits
+         from predictions.flat_ml_days_defaulted dd1
+                  left join predictions.flat_ml_days_defaulted dd2
+                            on dd2.person_id = dd1.person_id
+                                and dd2.visit_number = dd1.visit_number - 1
+                  left join predictions.flat_ml_days_defaulted dd3
+                            on dd3.person_id = dd2.person_id
+                                and dd3.visit_number = dd2.visit_number - 1
+     ),
+     num_2wk_defaults_last_3_visits as (
+         select
+             dd1.person_id,
+             dd1.encounter_id,
+             dd1.visit_number,
+             case
+                 when dd1.days_defaulted_last_encounter is null or
+                      dd2.days_defaulted_last_encounter is null or
+                      dd3.days_defaulted_last_encounter is null
+                     then null
+                 else
+                    if(dd1.days_defaulted_last_encounter >= 14, 1, 0) +
+                    if(dd2.days_defaulted_last_encounter >= 14, 1, 0) +
+                    if(dd3.days_defaulted_last_encounter >= 14, 1, 0)
+                 end as num_2wks_defaults_last_3visits
+         from predictions.flat_ml_days_defaulted dd1
+                  left join predictions.flat_ml_days_defaulted dd2
+                            on dd2.person_id = dd1.person_id
+                                and dd2.visit_number = dd1.visit_number - 1
+                  left join predictions.flat_ml_days_defaulted dd3
+                            on dd3.person_id = dd2.person_id
+                                and dd3.visit_number = dd2.visit_number - 1
+     ),
+     num_1month_defaults_last_3_visits as (
+         select
+             dd1.person_id,
+             dd1.encounter_id,
+             dd1.visit_number,
+             case
+                 when dd1.days_defaulted_last_encounter is null or
+                      dd2.days_defaulted_last_encounter is null or
+                      dd3.days_defaulted_last_encounter is null
+                     then null
+                 else
+                    if(dd1.days_defaulted_last_encounter >= 30, 1, 0) +
+                    if(dd2.days_defaulted_last_encounter >= 30, 1, 0) +
+                    if(dd3.days_defaulted_last_encounter >= 30, 1, 0)
+                 end as num_1month_defaults_last_3_visits
+         from predictions.flat_ml_days_defaulted dd1
+                  left join predictions.flat_ml_days_defaulted dd2
+                            on dd2.person_id = dd1.person_id
+                                and dd2.visit_number = dd1.visit_number - 1
+                  left join predictions.flat_ml_days_defaulted dd3
+                            on dd3.person_id = dd2.person_id
+                                and dd3.visit_number = dd2.visit_number - 1
+     ),
+     defaults_by_days as (
+         select
+             dd.person_id,
+             dd.encounter_id,
+             encounter_date,
+             max(dd.days_defaulted_last_encounter) as days_defaulted
+         from predictions.flat_ml_days_defaulted dd
+         group by dd.person_id, encounter_date
+     )
 -- describe the columns we need
 select
     fs.person_id,
     fs.encounter_id,
     fs.encounter_type,
     fs.location_id,
-    fs.rtc_date,
+    date(fs.rtc_date) as rtc_date,
     timestampdiff(YEAR, p.birthdate, fs.encounter_datetime) as Age,
     if(p.birthdate is null, 1, 0) as Age_NA,
     p.gender as Gender,
     null as Marital_status,
     timestampdiff(year,
-        if(year(fs.arv_first_regimen_start_date) != 1900,
-            date(fs.arv_first_regimen_start_date),
-            null
-        ),
-        date(fs.encounter_datetime)
-    ) as Duration_in_HIV_care,
+                  if(year(fs.arv_first_regimen_start_date) != 1900,
+                     date(fs.arv_first_regimen_start_date),
+                     null
+                      ),
+                  date(fs.encounter_datetime)
+        ) as Duration_in_HIV_care,
     if(fs.arv_first_regimen_start_date is null or year(fs.arv_first_regimen_start_date) = 1900,
        1, 0) as Duration_in_HIV_care_NA,
     case
@@ -59,7 +129,7 @@ select
         when round(fs.weight / ((fs.height / 100) * (fs.height / 100)), 2) > 60.0
             then null
         else round(fs.weight / ((fs.height / 100) * (fs.height / 100)), 2)
-    end as BMI,
+        end as BMI,
     case
         when fs.weight is null or fs.height is null or fs.weight < 1 or fs.height < 1
             then 1
@@ -68,7 +138,7 @@ select
         when round(fs.weight / ((fs.height / 100) * (fs.height / 100)), 2) > 60.0
             then 1
         else 0
-    end as BMI_NA,
+        end as BMI_NA,
     null as Travel_time,
     fs.cur_who_stage as WHO_staging,
     if(fs.cur_who_stage is null, 1, 0) as WHO_staging_NA,
@@ -106,8 +176,14 @@ select
     dd.visit_number as Visit_Number,
     days_defaulted_last_encounter as Days_defaulted_in_prev_enc,
     if(days_defaulted_last_encounter is null, 1, 0) as Days_defaulted_in_prev_enc_NA,
+    num_1day_defaults_last_3_visits as num_1day_defaults_last_3visits,
+    if(num_1day_defaults_last_3_visits is null, 1, 0) as num_1day_defaults_last_3visits_NA,
+    num_7day_defaults_last_3_visits as num_7days_defaults_last_3visits,
+    if(num_7day_defaults_last_3_visits is null, 1, 0) as num_7days_defaults_last_3visits_NA,
     num_2wks_defaults_last_3visits,
     if(num_2wks_defaults_last_3visits is null, 1, 0) as num_2wks_defaults_last_3visits_NA,
+    num_1month_defaults_last_3_visits as num_1month_defaults_last_3visits,
+    if(num_1month_defaults_last_3_visits is null, 1, 0) as num_1month_defaults_last_3visits_NA,
     coalesce(any_30d_defaults_1yr, 0) as ever_defaulted_by_1m_in_last_1year,
     if(any_30d_defaults_1yr is null, 1, 0) as ever_defaulted_by_1m_in_last_1year_NA,
     coalesce(any_30d_defaults_2yr, 0) as ever_defaulted_by_1m_in_last_2year,
@@ -141,44 +217,54 @@ select
     fs.on_tb_tx as On_TB_TX,
     coalesce(fs.on_ipt, 0) as On_IPT,
     coalesce(fs.ca_cx_screen, 0) as CA_CX_Screening,
-    fs.ca_cx_screening_result as CA_CX_Screening_Result
+    fs.ca_cx_screening_result as CA_CX_Screening_Result,
+    convert(month(date(fs.rtc_date)), char) as 'Month'
 from flat_hiv_summary_v15b as fs
-    left join predictions.flat_ml_baseline_visit baseline
-        on fs.person_id = baseline.person_id
-    left join predictions.flat_ml_days_defaulted dd
-        on dd.encounter_id = fs.encounter_id
-            and dd.person_id = fs.person_id
-    join amrs.person p on p.person_id = fs.person_id
-    left join amrs.encounter_type et on fs.encounter_type = et.encounter_type_id
-    left join amrs.location l
-        on fs.location_id = l.location_id
-            and l.retired = 0
+         left join predictions.flat_ml_baseline_visit baseline
+                   on fs.person_id = baseline.person_id
+         left join predictions.flat_ml_days_defaulted dd
+                   on dd.encounter_id = fs.encounter_id
+                       and dd.person_id = fs.person_id
+         join amrs.person p on p.person_id = fs.person_id
+         left join amrs.encounter_type et on fs.encounter_type = et.encounter_type_id
+         left join amrs.location l
+                   on fs.location_id = l.location_id
+                       and l.retired = 0
     -- If a patient in enrolled in PMTCT, they are also enrolled in antenatal care
     -- Currently, we only keep the PMTCT record
-    left join etl.program_visit_map pvm
-                on pvm.visit_type_id = fs.visit_type
-                    and pvm.voided is null
-                    and pvm.program_type_id != 42
-    left join amrs.program program
-        on pvm.program_type_id = program.program_id
-            and program.retired = 0
-    left join num_2wk_defaults_last_3_visits 2wk_defaults
-        on 2wk_defaults.person_id = fs.person_id
-            and 2wk_defaults.encounter_id = fs.encounter_id
-    left join (
-        select person_id, if(days_defaulted >= 30, 1, 0) as any_30d_defaults_1yr
-        from defaults_by_days
-        where encounter_date between date_sub('2023-06-19', interval 1 year) and '2023-06-19'
-        group by person_id
-    ) as 1yr on 1yr.person_id = fs.person_id
-    left join (
-        select person_id, if(days_defaulted >= 30, 1, 0) as any_30d_defaults_2yr
-        from defaults_by_days
-        where encounter_date between date_sub('2023-06-19', interval 2 year) and '2023-06-19'
-        group by person_id
-    ) as 2yr on 2yr.person_id = fs.person_id
-    left join predictions.ml_weekly_predictions mlp
-        on mlp.encounter_id = fs.encounter_id
+         left join etl.program_visit_map pvm
+                   on pvm.visit_type_id = fs.visit_type
+                       and pvm.voided is null
+                       and pvm.program_type_id != 42
+         left join amrs.program program
+                   on pvm.program_type_id = program.program_id
+                       and program.retired = 0
+         left join num_1day_defaults_last_3_visits 1day_defaults
+                   on 1day_defaults.person_id = fs.person_id
+                       and 1day_defaults.encounter_id = fs.encounter_id
+         left join num_7day_defaults_last_3_visits 7day_defaults
+                   on 7day_defaults.person_id = fs.person_id
+                       and 7day_defaults.encounter_id = fs.encounter_id
+         left join num_2wk_defaults_last_3_visits 2wk_defaults
+                   on 2wk_defaults.person_id = fs.person_id
+                       and 2wk_defaults.encounter_id = fs.encounter_id
+         left join num_1month_defaults_last_3_visits 1month_defaults
+                   on 1month_defaults.person_id = fs.person_id
+                       and 1month_defaults.encounter_id = fs.encounter_id
+         left join (
+    select person_id, if(days_defaulted >= 30, 1, 0) as any_30d_defaults_1yr
+    from defaults_by_days
+    where encounter_date between date_sub('2023-06-19', interval 1 year) and '2023-06-19'
+    group by person_id
+) as 1yr on 1yr.person_id = fs.person_id
+         left join (
+    select person_id, if(days_defaulted >= 30, 1, 0) as any_30d_defaults_2yr
+    from defaults_by_days
+    where encounter_date between date_sub('2023-06-19', interval 2 year) and '2023-06-19'
+    group by person_id
+) as 2yr on 2yr.person_id = fs.person_id
+         left join predictions.ml_weekly_predictions mlp
+                   on mlp.encounter_id = fs.encounter_id
 where fs.location_id in (26,23,319,130,313,9,78,310,20,312,12,321,8,341,342,65,314,64,83,90,106,86,336,91,320,74,76,79,100,311,75,195,19,230)
   -- test locations
   and fs.location_id not in (429, 430, 354)
