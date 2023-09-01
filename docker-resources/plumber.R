@@ -14,8 +14,14 @@ h2o.init()
 
 dbConfig <- config::get()
 
-ml_model <- h2o.loadModel(
-  "/app/model/y0_1days_adult_minor_IIT/2_StackedEnsemble_BestOfFamily_1_AutoML_8_20230726_142520_auc_0.704/StackedEnsemble_BestOfFamily_1_AutoML_8_20230726_142520"
+ml_model_version <- "V7"
+
+ml_model_adult <- h2o.loadModel(
+  "/app/model/y0_1days_adult_IIT/1_StackedEnsemble_BestOfFamily_1_AutoML_1_20230812_150159_auc_0.775/StackedEnsemble_BestOfFamily_1_AutoML_1_20230812_150159"
+)
+
+ml_model_minor <- h2o.loadModel(
+  "/app/model/y0_1day_minor_IIT/1_StackedEnsemble_BestOfFamily_1_AutoML_2_20230813_03957_auc_0.734/StackedEnsemble_BestOfFamily_1_AutoML_2_20230813_03957"
 )
 
 ml_sql <- read_file("/app/iit_prod_data_extract.sql")
@@ -96,39 +102,65 @@ function(
   }
 
   # convert the dataframe to an h2o object, removing elements that are not predictors
-  h2o_predict_frame <- predictors %>%
+  h2o_predict_frame_adults <- predictors %>%
+    filter(Age >= 18) %>%
     select(-c(person_id, encounter_id, location_id)) %>%
     as.h2o()
+  on.exit(h2o.rm(h2o_predict_frame_adults))
+  
+  h2o_predict_frame_minors <- predictors %>%
+    filter(Age < 18) %>%
+    select(-c(person_id, encounter_id, location_id)) %>%
+    as.h2o()
+  on.exit(h2o.rm(h2o_predict_frame_minors))
 
   # run the predictions
   # TODO Why does this seem to claim we're running in train / validate mode?
-  result <- h2o.predict(ml_model, h2o_predict_frame)
-
-  # h2o persists both the frame *and* the result in it's cluster;
-  # however, we don't need them, so after this function returns, we delete them
-  on.exit(h2o.rm(h2o_predict_frame))
-  on.exit(h2o.rm(result))
+  results_adults <- h2o.predict(ml_model_adult, h2o_predict_frame_adults)
+  on.exit(h2o.rm(results_adults))
+  results_minors <- h2o.predict(ml_model_minor, h2o_predict_frame_minors)
+  on.exit(h2o.rm(results_minors))
 
   # for the case where we need this, it should be safe to assume
   # that the start week has the correct values
   cohort <- clock::date_format(clock::add_weeks(start_date, -1), format="%Y-W%U")
 
   # enrich the table of predictors with the results
-  prediction_result <- predictors %>%
-    bind_cols(as.data.frame(result)) %>%
+  prediction_results_adults <- predictors %>%
+    filter(Age >= 18) %>%
+    bind_cols(as.data.frame(results_adults)) %>%
     # reduce data frame and rename the result
     select(person_id, encounter_id, location_id, rtc_date, predicted_prob_disengage = Disengaged) %>%
     # calculate the patient's risk category
-    predict_risk(cohort) %>%
+    predict_risk(cohort, "adults") %>%
     # add per-row metadata about the run
     mutate(
       prediction_generated_date = Sys.time(),
-      model_version = "V6",
+      model_version = ml_model_version,
       start_date = start_of_week,
       end_date = end_of_week,
       week = clock::date_format(clock::add_weeks(week_start(rtc_date), -1), format="%Y-W%U"),
       .keep = "unused"
     )
+  
+  prediction_results_minors <- predictors %>%
+    filter(Age < 18) %>%
+    bind_cols(as.data.frame(results_minors)) %>%
+    # reduce data frame and rename the result
+    select(person_id, encounter_id, location_id, rtc_date, predicted_prob_disengage = Disengaged) %>%
+    # calculate the patient's risk category
+    predict_risk(cohort, "minors") %>%
+    # add per-row metadata about the run
+    mutate(
+      prediction_generated_date = Sys.time(),
+      model_version = ml_model_version,
+      start_date = start_of_week,
+      end_date = end_of_week,
+      week = clock::date_format(clock::add_weeks(week_start(rtc_date), -1), format="%Y-W%U"),
+      .keep = "unused"
+    )
+  
+  prediction_result <- bind_rows(prediction_results_adults, prediction_results_minors)
 
   # add the rows from the prediction_result to the ml_weekly_predictions table
   DBI::dbAppendTable(my_pool, SQL('predictions.ml_weekly_predictions'), prediction_result)
@@ -156,7 +188,45 @@ week_end <- function(date) {
   clock::date_ceiling(date, "week", origin = as.Date("1970-01-04"))
 }
 
-predict_risk <- function(.data, cohort) {
+adult_risk_threshold_query <- 
+  "select
+    'Medium Risk' as risk,
+    min(predicted_prob_disengage) as probability_threshold
+  from predictions.ml_weekly_predictions mlp
+    join amrs.person p
+      on mlp.person_id = p.person_id
+  where predicted_risk = 'Medium Risk' and week = ?week
+    and timestampdiff(YEAR, p.birthdate, mlp.rtc_date) >= 18
+  union
+  select
+    'High Risk' as risk,
+    min(predicted_prob_disengage) as probability_threshold
+  from predictions.ml_weekly_predictions mlp
+    join amrs.person p
+      on mlp.person_id = p.person_id
+  where predicted_risk = 'High Risk' and week = ?week
+    and timestampdiff(YEAR, p.birthdate, mlp.rtc_date) >= 18;"
+
+minor_risk_threshold_query <- 
+  "select
+    'Medium Risk' as risk,
+    min(predicted_prob_disengage) as probability_threshold
+  from predictions.ml_weekly_predictions mlp
+    join amrs.person p
+      on mlp.person_id = p.person_id
+  where predicted_risk = 'Medium Risk' and week = ?week
+    and timestampdiff(YEAR, p.birthdate, mlp.rtc_date) < 18
+  union
+  select
+    'High Risk' as risk,
+    min(predicted_prob_disengage) as probability_threshold
+  from predictions.ml_weekly_predictions mlp
+    join amrs.person p
+      on mlp.person_id = p.person_id
+  where predicted_risk = 'High Risk' and week = ?week
+    and timestampdiff(YEAR, p.birthdate, mlp.rtc_date) < 18;"
+
+predict_risk <- function(.data, cohort, age_category) {
   # arbitrary cut-off, but we expect one big batch per week
   # and several small batches
   if (nrow(.data) < 200) {
@@ -164,17 +234,7 @@ predict_risk <- function(.data, cohort) {
       my_pool,
       DBI::sqlInterpolate(
         my_pool,
-        "select
-          'Medium Risk' as risk,
-          min(predicted_prob_disengage) as probability_threshold
-        from predictions.ml_weekly_predictions mlp
-        where predicted_risk = 'Medium Risk' and week = ?week
-        union
-        select
-          'High Risk' as risk,
-          min(predicted_prob_disengage) as probability_threshold
-        from predictions.ml_weekly_predictions mlp
-        where predicted_risk = 'High Risk' and week = ?week;",
+        ifelse(age_category == "minors", minor_risk_threshold_query, adult_risk_threshold_query),
         week = cohort
       )
     )
