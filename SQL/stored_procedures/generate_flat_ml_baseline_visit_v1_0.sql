@@ -77,7 +77,12 @@ begin
         baseline.cur_arv_line as Regimen_Line_baseline,
         coalesce(baseline.is_pregnant, 0) as Pregnancy_baseline,
         case
-            when baseline.location_id in (55, 315, 19, 230, 26, 23, 319, 130, 313, 9, 342, 78, 310, 20, 312, 12, 321, 8, 341, 19, 230)
+            when baseline.location_id in (
+                -- Dumisha
+                55, 315, 19, 230, 26, 23, 319, 130, 313, 9, 342, 78, 310, 20, 312, 12, 321, 8, 341, 19, 230,
+                -- Uzima
+                1, 13, 14, 15, 197, 198, 17, 227, 214, 306, 11, 229, 421, 422, 423, 420
+            )
                 then 'Urban'
             when baseline.location_id in (65, 314, 64, 83, 316, 90, 135, 106, 86, 336, 91, 320, 74, 76, 79, 100, 311, 75)
                 then 'Rural'

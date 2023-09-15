@@ -153,7 +153,12 @@ select
     if(fs.cur_arv_line is null, 1, 0) as Regimen_Line_NA,
     coalesce(fs.is_pregnant, 0) as Pregnancy,
     case
-        when fs.location_id in (55, 315, 19, 230, 26, 23, 319, 130, 313, 9, 342, 78, 310, 20, 312, 12, 321, 8, 341, 19, 230)
+        when fs.location_id in (
+            -- Dumisha
+            55, 315, 19, 230, 26, 23, 319, 130, 313, 9, 342, 78, 310, 20, 312, 12, 321, 8, 341, 19, 230,
+            -- Uzima
+            1, 13, 14, 15, 197, 198, 17, 227, 214, 306, 11, 229, 421, 422, 423, 420
+        )
             then 'Urban'
         when fs.location_id in (65, 314, 64, 83, 316, 90, 135, 106, 86, 336, 91, 320, 74, 76, 79, 100, 311, 75)
             then 'Rural'
@@ -265,7 +270,12 @@ from flat_hiv_summary_v15b as fs
 ) as 2yr on 2yr.person_id = fs.person_id
          left join predictions.ml_weekly_predictions mlp
                    on mlp.encounter_id = fs.encounter_id
-where fs.location_id in (26,23,319,130,313,9,78,310,20,312,12,321,8,341,342,65,314,64,83,90,106,86,336,91,320,74,76,79,100,311,75,195,19,230)
+where fs.location_id in (
+    -- Dumisha
+    26,23,319,130,313,9,78,310,20,312,12,321,8,341,342,65,314,64,83,90,106,86,336,91,320,74,76,79,100,311,75,195,19,230,
+    -- Uzima
+    1, 13, 14, 15, 197, 198, 17, 227, 214, 306, 11, 229, 421, 422, 423, 420
+  )
   -- test locations
   and fs.location_id not in (429, 430, 354)
   -- filter encounters: 111 - LabResult, 99999 - lab encounter type
