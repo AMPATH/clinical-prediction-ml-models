@@ -72,9 +72,15 @@ cors <- function(req, res) {
 #* @serializer json
 #* @post /predict
 function(
-  startDate = clock::add_weeks(Sys.Date(), 1),
-  weeks = "1"
+  startDate = NA,
+  weeks = "1",
+  retrospective = "F"
 ) {
+  retrospective <- as.logical(retrospective)
+  if (is.na(startDate)) {
+    startDate = clock::add_weeks(Sys.Date(), 1)
+  }
+
   # handle parameters
   # despite typings, the arguments are always strings
   start_date <- as.Date(startDate)
@@ -90,7 +96,8 @@ function(
     my_pool,
     ml_sql,
     startDate = start_of_week,
-    endDate = end_of_week
+    endDate = end_of_week,
+    retrospective = retrospective
   )
 
   # run the query, giving us a dataframe
@@ -163,7 +170,7 @@ function(
   prediction_result <- bind_rows(prediction_results_adults, prediction_results_minors)
 
   # add the rows from the prediction_result to the ml_weekly_predictions table
-  DBI::dbAppendTable(my_pool, SQL('predictions.ml_weekly_predictions'), prediction_result)
+  # DBI::dbAppendTable(my_pool, SQL('predictions.ml_weekly_predictions'), prediction_result)
 
   # return the result so the API returns *something*
   prediction_result
@@ -191,40 +198,48 @@ week_end <- function(date) {
 adult_risk_threshold_query <- 
   "select
     'Medium Risk' as risk,
+    location_id,
     min(predicted_prob_disengage) as probability_threshold
   from predictions.ml_weekly_predictions mlp
     join amrs.person p
       on mlp.person_id = p.person_id
   where predicted_risk = 'Medium Risk' and week = ?week
     and timestampdiff(YEAR, p.birthdate, mlp.rtc_date) >= 18
+  group by location_id
   union
   select
     'High Risk' as risk,
+    location_id,
     min(predicted_prob_disengage) as probability_threshold
   from predictions.ml_weekly_predictions mlp
     join amrs.person p
       on mlp.person_id = p.person_id
   where predicted_risk = 'High Risk' and week = ?week
-    and timestampdiff(YEAR, p.birthdate, mlp.rtc_date) >= 18;"
+    and timestampdiff(YEAR, p.birthdate, mlp.rtc_date) >= 18
+  group by location_id;"
 
 minor_risk_threshold_query <- 
   "select
     'Medium Risk' as risk,
+    location_id,
     min(predicted_prob_disengage) as probability_threshold
   from predictions.ml_weekly_predictions mlp
     join amrs.person p
       on mlp.person_id = p.person_id
   where predicted_risk = 'Medium Risk' and week = ?week
     and timestampdiff(YEAR, p.birthdate, mlp.rtc_date) < 18
+  group by location_id
   union
   select
     'High Risk' as risk,
+    location_id,
     min(predicted_prob_disengage) as probability_threshold
   from predictions.ml_weekly_predictions mlp
     join amrs.person p
       on mlp.person_id = p.person_id
   where predicted_risk = 'High Risk' and week = ?week
-    and timestampdiff(YEAR, p.birthdate, mlp.rtc_date) < 18;"
+    and timestampdiff(YEAR, p.birthdate, mlp.rtc_date) < 18
+  group by location_id;"
 
 predict_risk <- function(.data, cohort, age_category) {
   # arbitrary cut-off, but we expect one big batch per week
@@ -242,39 +257,60 @@ predict_risk <- function(.data, cohort, age_category) {
     if (nrow(cutoffs) == 2) {
       medium_risk <- cutoffs %>%
         filter(risk == "Medium Risk") %>%
-        select(probability_threshold) %>%
-        pull
+        select(location_id, probability_threshold)
       
       high_risk <- cutoffs %>%
         filter(risk == "High Risk") %>%
-        select(probability_threshold) %>%
-        pull
+        select(location_id, probability_threshold)
       
       # if we have risk thresholds, just use them
       return(
         .data %>%
+          group_by(location_id) %>%
           mutate(
+            hrisk_threshold = high_risk %>% 
+              filter(location_id == cur_group()$location_id) %>% 
+              select(probability_threshold) %>% pull,
+            mrisk_threshold = medium_risk %>% 
+              filter(location_id == cur_group()$location_id) %>% 
+              select(probability_threshold) %>% pull,
             predicted_risk = 
               case_when(
-                predicted_prob_disengage >= high_risk ~ "High Risk",
-                predicted_prob_disengage >= medium_risk ~ "Medium Risk",
+                predicted_prob_disengage >= hrisk_threshold ~ "High Risk",
+                predicted_prob_disengage >= mrisk_threshold ~ "Medium Risk",
                 .default = NA_character_
-              )
-          )
+              ),
+            .keep = "all"
+          ) %>%
+          ungroup() %>%
+          select(-c(hrisk_threshold, mrisk_threshold))
       )
     }
   }
 
-  .data %>% mutate(
-    percentile = percent_rank(predicted_prob_disengage),
-    predicted_risk = 
-      case_when(
-        percentile >= .9 ~ "High Risk",
-        percentile >= .8 ~ "Medium Risk",
-        .default = NA_character_
-      ),
-    .keep = "all"
-  ) %>%
-  select(-c(percentile))
+  .data %>% 
+    group_by(location_id) %>%
+    mutate(
+      percentile = percent_rank(predicted_prob_disengage),
+      predicted_risk = 
+        case_when(
+          percentile >= .9 ~ "High Risk",
+          percentile >= .8 ~ "Medium Risk",
+          .default = NA_character_
+        ),
+      .keep = "all"
+    ) %>%
+    ungroup() %>%
+    select(-c(percentile)) %>%
+    mutate(
+      percentile = percent_rank(predicted_prob_disengage),
+      predicted_risk =
+        case_when(
+          !is.na(predicted_risk) ~ predicted_risk,
+          percentile >= .9 ~ "High Risk",
+          percentile >= .8 ~ "Medium Risk",
+          .default = NA_character_
+        )
+    )
 }
 

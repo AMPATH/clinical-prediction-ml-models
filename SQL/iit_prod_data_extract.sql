@@ -257,17 +257,17 @@ from flat_hiv_summary_v15b as fs
                    on 1month_defaults.person_id = fs.person_id
                        and 1month_defaults.encounter_id = fs.encounter_id
          left join (
-    select person_id, if(days_defaulted >= 30, 1, 0) as any_30d_defaults_1yr
-    from defaults_by_days
-    where encounter_date between date_sub('2023-06-19', interval 1 year) and '2023-06-19'
-    group by person_id
-) as 1yr on 1yr.person_id = fs.person_id
+            select person_id, if(days_defaulted >= 30, 1, 0) as any_30d_defaults_1yr
+            from defaults_by_days
+            where encounter_date between date_sub('2023-06-19', interval 1 year) and '2023-06-19'
+            group by person_id
+        ) as 1yr on 1yr.person_id = fs.person_id
          left join (
-    select person_id, if(days_defaulted >= 30, 1, 0) as any_30d_defaults_2yr
-    from defaults_by_days
-    where encounter_date between date_sub('2023-06-19', interval 2 year) and '2023-06-19'
-    group by person_id
-) as 2yr on 2yr.person_id = fs.person_id
+            select person_id, if(days_defaulted >= 30, 1, 0) as any_30d_defaults_2yr
+            from defaults_by_days
+            where encounter_date between date_sub('2023-06-19', interval 2 year) and '2023-06-19'
+            group by person_id
+        ) as 2yr on 2yr.person_id = fs.person_id
          left join predictions.ml_weekly_predictions mlp
                    on mlp.encounter_id = fs.encounter_id
 where fs.location_id in (
@@ -289,8 +289,9 @@ where fs.location_id in (
   and (fs.transfer_in_location_id is null or fs.transfer_in_location_id != 9999)
   and fs.is_clinical_encounter = 1
   and fs.rtc_date between ?startDate and ?endDate
-  -- for retrospective data
+  and (fs.next_clinical_datetime_hiv is null
+    or (?retrospective and fs.next_clinical_datetime_hiv >= fs.rtc_date)
+  )
   and fs.encounter_datetime < fs.date_created
-  and (fs.next_clinical_datetime_hiv >= fs.date_created
-    or fs.next_clinical_datetime_hiv is null)
-  and mlp.encounter_id is null;
+  -- if not run retrospectively, don't generate new predictions for existing cases
+  and (?retrospective or mlp.encounter_id is null);
