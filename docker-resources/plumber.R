@@ -170,7 +170,7 @@ function(
   prediction_result <- bind_rows(prediction_results_adults, prediction_results_minors)
 
   # add the rows from the prediction_result to the ml_weekly_predictions table
-  # DBI::dbAppendTable(my_pool, SQL('predictions.ml_weekly_predictions'), prediction_result)
+  DBI::dbAppendTable(my_pool, SQL('predictions.ml_weekly_predictions'), prediction_result)
 
   # return the result so the API returns *something*
   prediction_result
@@ -311,6 +311,7 @@ predict_risk <- function(.data, cohort, age_category) {
           percentile >= .8 ~ "Medium Risk",
           .default = NA_character_
         )
-    )
+    )%>%
+    select(-c(percentile))
 }
 
