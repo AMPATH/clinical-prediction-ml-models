@@ -224,7 +224,7 @@ select
     coalesce(fs.ca_cx_screen, 0) as CA_CX_Screening,
     fs.ca_cx_screening_result as CA_CX_Screening_Result,
     convert(month(date(fs.rtc_date)), char) as 'Month'
-from flat_hiv_summary_v15b as fs
+from etl.flat_hiv_summary_v15b as fs
          left join predictions.flat_ml_baseline_visit baseline
                    on fs.person_id = baseline.person_id
          left join predictions.flat_ml_days_defaulted dd
@@ -240,7 +240,8 @@ from flat_hiv_summary_v15b as fs
          left join etl.program_visit_map pvm
                    on pvm.visit_type_id = fs.visit_type
                        and pvm.voided is null
-                       and pvm.program_type_id != 42
+                       and (pvm.program_type_id != 42 or pvm.visit_type_id != 54)
+                       and (pvm.program_type_id != 52 or pvm.visit_type_id not in (1, 2))
          left join amrs.program program
                    on pvm.program_type_id = program.program_id
                        and program.retired = 0
