@@ -240,7 +240,7 @@ from etl.flat_hiv_summary_v15b as fs
          left join etl.program_visit_map pvm
                    on pvm.visit_type_id = fs.visit_type
                        and pvm.voided is null
-                       and (pvm.program_type_id != 42 or pvm.visit_type_id != 54)
+                       and (pvm.program_type_id != 42 or pvm.visit_type_id not in (51, 54))
                        and (pvm.program_type_id != 52 or pvm.visit_type_id not in (1, 2))
          left join amrs.program program
                    on pvm.program_type_id = program.program_id
