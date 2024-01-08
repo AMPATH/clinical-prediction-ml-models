@@ -146,7 +146,7 @@ function(
       model_version = ml_model_version,
       start_date = start_of_week,
       end_date = end_of_week,
-      week = clock::date_format(clock::add_weeks(week_start(rtc_date), -1), format="%Y-W%U"),
+      week = get_week_number(rtc_date),
       .keep = "unused"
     )
   
@@ -163,7 +163,7 @@ function(
       model_version = ml_model_version,
       start_date = start_of_week,
       end_date = end_of_week,
-      week = clock::date_format(clock::add_weeks(week_start(rtc_date), -1), format="%Y-W%U"),
+      week = get_week_number(rtc_date),
       .keep = "unused"
     )
   
@@ -193,6 +193,12 @@ week_start <- function(date) {
 week_end <- function(date) {
   date <- as.Date(date)
   clock::date_ceiling(date, "week", origin = as.Date("1970-01-04"))
+}
+
+get_week_number <- function(date) {
+  previous_week <- clock::add_weeks(week_start(date), -1)
+  ywd <- clock::as_iso_year_week_day(previous_week)
+  paste0(clock::get_year(ywd), "-W", clock::get_week(ywd))
 }
 
 adult_risk_threshold_query <- 
