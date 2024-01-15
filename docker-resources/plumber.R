@@ -198,7 +198,7 @@ week_end <- function(date) {
 get_week_number <- function(date) {
   previous_week <- clock::add_weeks(week_start(date), -1)
   ywd <- clock::as_iso_year_week_day(previous_week)
-  paste0(clock::get_year(ywd), "-W", clock::get_week(ywd))
+  paste0(clock::get_year(ywd), "-W", stringr::str_pad(clock::get_week(ywd), 2, pad = "0"))
 }
 
 adult_risk_threshold_query <- 
