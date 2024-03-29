@@ -260,13 +260,13 @@ from etl.flat_hiv_summary_v15b as fs
          left join (
             select person_id, if(days_defaulted >= 30, 1, 0) as any_30d_defaults_1yr
             from defaults_by_days
-            where encounter_date between date_sub('2023-06-19', interval 1 year) and '2023-06-19'
+            where encounter_date between date_sub(?startDate, interval 1 year) and ?startDate
             group by person_id
         ) as 1yr on 1yr.person_id = fs.person_id
          left join (
             select person_id, if(days_defaulted >= 30, 1, 0) as any_30d_defaults_2yr
             from defaults_by_days
-            where encounter_date between date_sub('2023-06-19', interval 2 year) and '2023-06-19'
+            where encounter_date between date_sub(?startDate, interval 2 year) and ?startDate
             group by person_id
         ) as 2yr on 2yr.person_id = fs.person_id
          left join predictions.ml_weekly_predictions mlp
