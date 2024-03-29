@@ -294,5 +294,6 @@ where fs.location_id in (
     or (?retrospective and fs.next_clinical_datetime_hiv >= fs.rtc_date)
   )
   and fs.encounter_datetime < fs.date_created
+  and fs.death_date is null
   -- if not run retrospectively, don't generate new predictions for existing cases
   and (?retrospective or mlp.encounter_id is null);
