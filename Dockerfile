@@ -31,6 +31,7 @@ COPY docker-resources/run_predictions.sh /app/run_predictions.sh
 RUN chmod +x /app/run_predictions.sh
 COPY docker-resources/run_daily_stored_procedures.sh /app/run_daily_stored_procedures.sh
 RUN chmod +x /app/run_daily_stored_procedures.sh
+COPY docker-resources/dailyStoredProcedures.R /app/dailyStoredProcedures.R
 COPY docker-resources/docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 COPY docker-resources/plumber.R /app/plumber.R
