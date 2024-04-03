@@ -13,17 +13,17 @@ my_pool <- dbPool(
   dbname = dbConfig$defaultDb
 )
 
-DBI::dbGetQuery(
+DBI::dbExecute(
   my_pool,
   "CALL predictions.generate_flat_ml_baseline_visit_v1_0();"
 )
 
-DBI::dbGetQuery(
+DBI::dbExecute(
   my_pool,
   "CALL predictions.generate_flat_ml_days_defaulted_v1_0();"
 )
 
-DBI::dbGetQuery(
+DBI::dbExecute(
   my_pool,
   "CALL predictions.add_observed_appointments_to_ml_predictions_v1_0();"
 )
