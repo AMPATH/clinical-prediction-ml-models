@@ -15,6 +15,11 @@ my_pool <- dbPool(
 
 DBI::dbExecute(
   my_pool,
+  "CALL predictions.update_encounter_rtc_dates_v1_0();"
+)
+
+DBI::dbExecute(
+  my_pool,
   "CALL predictions.generate_flat_ml_baseline_visit_v1_0();"
 )
 
