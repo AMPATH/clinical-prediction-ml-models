@@ -24,7 +24,9 @@ RUN install2.r --error --skipinstalled \
 
 RUN Rscript -e "remotes::install_version('h2o', '3.42.0.2')"
 
-COPY docker-resources/crontab /etc/cron.d/crontab
+COPY docker-resources/crontab /etc/cron.d/iit-crontab
+RUN chmod 0644 /etc/cron.d/iit-crontab
+RUN touch /var/log/cron.log
 COPY IIT-Prediction/model/V7 /app/model
 COPY SQL/iit_prod_data_extract.sql /app/iit_prod_data_extract.sql
 COPY docker-resources/run_predictions.sh /app/run_predictions.sh
