@@ -32,3 +32,5 @@ DBI::dbExecute(
   my_pool,
   "CALL predictions.add_observed_appointments_to_ml_predictions_v1_0();"
 )
+
+poolClose(my_pool)

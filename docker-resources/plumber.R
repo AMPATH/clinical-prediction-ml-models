@@ -34,6 +34,8 @@ my_pool <- dbPool(
   dbname = dbConfig$defaultDb
 )
 
+on.exit(poolClose(my_pool))
+
 # Custom router modifications
 #* @plumber
 function(pr) {
@@ -136,6 +138,7 @@ function(
   prediction_results_adults <- predictors %>%
     filter(Age >= 18) %>%
     bind_cols(as.data.frame(results_adults)) %>%
+    left_join(results_adults, by = join_by(person_id, encounter_id, location_id)) %>%
     # reduce data frame and rename the result
     select(person_id, encounter_id, location_id, rtc_date, predicted_prob_disengage = Disengaged) %>%
     # calculate the patient's risk category
@@ -153,6 +156,7 @@ function(
   prediction_results_minors <- predictors %>%
     filter(Age < 18) %>%
     bind_cols(as.data.frame(results_minors)) %>%
+    left_join(results_minors, by = join_by(person_id, encounter_id, location_id)) %>%
     # reduce data frame and rename the result
     select(person_id, encounter_id, location_id, rtc_date, predicted_prob_disengage = Disengaged) %>%
     # calculate the patient's risk category
