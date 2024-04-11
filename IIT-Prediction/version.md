@@ -272,3 +272,120 @@ clean.df= clean.long.df %>%
 ### Monitoring
 
 Please save logs especially warning logs which we can use to track any drift in concept or bad variables.
+
+
+## V9
+
+
+
+Version 9 of the model is trained using 2 cohorts of datasets:
+
+* Adult -  up to 04-04-2024
+* Minor -  up to 04-04-2024
+
+Facility level predictors have been added (please see the csv shared via drive)
+We have simplified the model by removing some predictors
+
+
+### New predictors
+
+Here is a list of the new predictors that have been added
+
+```
+      'Days_Since_Last_VL_NA',
+      'Days_Since_Last_CD4_NA',
+      'BMI_baseline_NA',
+      'WHO_staging_baseline_NA',
+      'Regimen_Line_baseline_NA',
+      'HIV_disclosure_baseline_NA',
+      'CD4_baseline_NA',
+      'Viral_Load_log10_baseline_NA',
+
+     'Current_Clinic_County',
+     'Size_Enrollments_Log10',
+     'Volume_Visits_Log10',
+     'Care Programme',
+     'Urban_Rural',
+     'Current Facility Level',
+     'Private_Public',
+     'Facility Type'
+```
+
+
+
+### Removed predictors
+
+
+Here is a list of the old predictors that have been removed
+
+```
+      'Clinic_County', # Removed in V9
+      'Clinic_Name', # Removed in V9
+      "Clinic_Name_baseline",  # Removed in V9
+```
+
+
+
+### All predictors
+
+Finally here is a list of all predictors:
+
+```
+
+
+X=c(
+  
+   c(    
+   
+   'Age','Age_NA', 
+    'Gender' ,  
+   'num_1day_defaults_last_3visits',
+   'Current_Clinic_County',
+   'Days_defaulted_in_prev_enc', 'Days_defaulted_in_prev_enc_NA',
+    'Size_Enrollments_Log10',
+     'Volume_Visits_Log10',
+   'Care Programme',
+   'Days_Since_Last_VL',  'Days_Since_Last_VL_NA',
+   'Visit_Number',  'HIV_disclosure_stage', 'HIV_disclosure_baseline_NA',
+   'Program_Name', 'Days_Since_Last_CD4', 'Days_Since_Last_CD4_NA',
+   'Month', 'TB_Test_Result', 
+    'Viral_Load_log10', 'Viral_Load_log10_NA',
+   'BMI', 'BMI_NA',
+   'CD4','CD4_NA',  'Facility Type'
+    )
+  
+  
+)
+
+
+```
+
+
+### Model to use?
+
+#### Adult Model
+
+IIT-Prediction/model/V9/y0_1days_adult_IIT/1_StackedEnsemble_...
+
+Note: Please remember to factorize all character predictors before scoring
+
+```
+clean.df= clean.long.df %>% 
+      mutate_if(is.character, as.factor)   
+```
+
+
+### Minor Model
+
+IIT-Prediction/model/V9/y0_1day_minor_IIT/1_StackedEnsemble_...
+
+Note: Please remember to factorize all character predictors before scoring as shown below
+
+```
+clean.df= clean.long.df %>% 
+      mutate_if(is.character, as.factor)   
+```
+
+### Monitoring
+
+Please save logs especially warning logs which we can use to track any drift in concept or bad variables.
