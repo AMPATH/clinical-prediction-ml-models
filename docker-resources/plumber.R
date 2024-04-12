@@ -123,9 +123,9 @@ function(
 
   # run the predictions
   # TODO Why does this seem to claim we're running in train / validate mode?
-  results_adults <- h2o.predict(ml_model_adult, h2o_predict_frame_adults)
+  results_adults <- as.data.frame(h2o.predict(ml_model_adult, h2o_predict_frame_adults))
   on.exit(h2o.rm(results_adults))
-  results_minors <- h2o.predict(ml_model_minor, h2o_predict_frame_minors)
+  results_minors <- as.data.frame(h2o.predict(ml_model_minor, h2o_predict_frame_minors))
   on.exit(h2o.rm(results_minors))
 
   # for the case where we need this, it should be safe to assume
@@ -135,7 +135,6 @@ function(
   # enrich the table of predictors with the results
   prediction_results_adults <- predictors %>%
     filter(Age >= 18) %>%
-    bind_cols(as.data.frame(results_adults)) %>%
     left_join(results_adults, by = join_by(person_id, encounter_id, location_id)) %>%
     # reduce data frame and rename the result
     select(person_id, encounter_id, location_id, rtc_date, predicted_prob_disengage = Disengaged) %>%
@@ -153,7 +152,6 @@ function(
 
   prediction_results_minors <- predictors %>%
     filter(Age < 18) %>%
-    bind_cols(as.data.frame(results_minors)) %>%
     left_join(results_minors, by = join_by(person_id, encounter_id, location_id)) %>%
     # reduce data frame and rename the result
     select(person_id, encounter_id, location_id, rtc_date, predicted_prob_disengage = Disengaged) %>%
