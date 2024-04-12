@@ -34,8 +34,6 @@ my_pool <- dbPool(
   dbname = dbConfig$defaultDb
 )
 
-on.exit(poolClose(my_pool))
-
 # Custom router modifications
 #* @plumber
 function(pr) {
@@ -116,7 +114,7 @@ function(
     select(-c(person_id, encounter_id, location_id)) %>%
     as.h2o()
   on.exit(h2o.rm(h2o_predict_frame_adults))
-  
+
   h2o_predict_frame_minors <- predictors %>%
     filter(Age < 18) %>%
     select(-c(person_id, encounter_id, location_id)) %>%
@@ -152,7 +150,7 @@ function(
       week = get_week_number(rtc_date),
       .keep = "unused"
     )
-  
+
   prediction_results_minors <- predictors %>%
     filter(Age < 18) %>%
     bind_cols(as.data.frame(results_minors)) %>%
@@ -170,7 +168,7 @@ function(
       week = get_week_number(rtc_date),
       .keep = "unused"
     )
-  
+
   prediction_result <- bind_rows(prediction_results_adults, prediction_results_minors)
 
   # add the rows from the prediction_result to the ml_weekly_predictions table
@@ -205,7 +203,7 @@ get_week_number <- function(date) {
   paste0(clock::get_year(ywd), "-W", stringr::str_pad(clock::get_week(ywd), 2, pad = "0"))
 }
 
-adult_risk_threshold_query <- 
+adult_risk_threshold_query <-
   "select
     'Medium Risk' as risk,
     location_id,
@@ -228,7 +226,7 @@ adult_risk_threshold_query <-
     and timestampdiff(YEAR, p.birthdate, mlp.rtc_date) >= 18
   group by location_id;"
 
-minor_risk_threshold_query <- 
+minor_risk_threshold_query <-
   "select
     'Medium Risk' as risk,
     location_id,
@@ -268,23 +266,23 @@ predict_risk <- function(.data, cohort, age_category) {
       medium_risk <- cutoffs %>%
         filter(risk == "Medium Risk") %>%
         select(location_id, probability_threshold)
-      
+
       high_risk <- cutoffs %>%
         filter(risk == "High Risk") %>%
         select(location_id, probability_threshold)
-      
+
       # if we have risk thresholds, just use them
       return(
         .data %>%
           group_by(location_id) %>%
           mutate(
-            hrisk_threshold = high_risk %>% 
-              filter(location_id == cur_group()$location_id) %>% 
+            hrisk_threshold = high_risk %>%
+              filter(location_id == cur_group()$location_id) %>%
               select(probability_threshold) %>% pull,
-            mrisk_threshold = medium_risk %>% 
-              filter(location_id == cur_group()$location_id) %>% 
+            mrisk_threshold = medium_risk %>%
+              filter(location_id == cur_group()$location_id) %>%
               select(probability_threshold) %>% pull,
-            predicted_risk = 
+            predicted_risk =
               case_when(
                 predicted_prob_disengage >= hrisk_threshold ~ "High Risk",
                 predicted_prob_disengage >= mrisk_threshold ~ "Medium Risk",
@@ -298,11 +296,11 @@ predict_risk <- function(.data, cohort, age_category) {
     }
   }
 
-  .data %>% 
+  .data %>%
     group_by(location_id) %>%
     mutate(
       percentile = percent_rank(predicted_prob_disengage),
-      predicted_risk = 
+      predicted_risk =
         case_when(
           percentile >= .9 ~ "High Risk",
           percentile >= .8 ~ "Medium Risk",
@@ -324,4 +322,3 @@ predict_risk <- function(.data, cohort, age_category) {
     )%>%
     select(-c(percentile))
 }
-
