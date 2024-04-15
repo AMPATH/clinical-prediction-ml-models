@@ -128,6 +128,9 @@ function(
   results_minors <- h2o.predict(ml_model_minor, h2o_predict_frame_minors)
   on.exit(h2o.rm(results_minors))
 
+  results_adults_df <- as.data.frame(results_adults)
+  results_minors_df <- as.data.frame(results_minors)
+
   # for the case where we need this, it should be safe to assume
   # that the start week has the correct values
   cohort <- clock::date_format(clock::add_weeks(start_date, -1), format="%Y-W%U")
@@ -135,8 +138,7 @@ function(
   # enrich the table of predictors with the results
   prediction_results_adults <- predictors %>%
     filter(Age >= 18) %>%
-    bind_cols(as.data.frame(results_adults)) %>%
-    left_join(results_adults, by = join_by(person_id, encounter_id, location_id)) %>%
+    bind_cols(results_adults_df) %>%
     # reduce data frame and rename the result
     select(person_id, encounter_id, location_id, rtc_date, predicted_prob_disengage = Disengaged) %>%
     # calculate the patient's risk category
@@ -153,8 +155,7 @@ function(
 
   prediction_results_minors <- predictors %>%
     filter(Age < 18) %>%
-    bind_cols(as.data.frame(results_minors)) %>%
-    left_join(results_minors, by = join_by(person_id, encounter_id, location_id)) %>%
+    bind_cols(results_minors_df) %>%
     # reduce data frame and rename the result
     select(person_id, encounter_id, location_id, rtc_date, predicted_prob_disengage = Disengaged) %>%
     # calculate the patient's risk category
