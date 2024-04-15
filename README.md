@@ -1,12 +1,13 @@
 # clinical-prediction-ml-models
-The main objective of this project is to predict clinical outcomes using EHR Data and modern ML/AI 
 
-* IIT-Prediction - Start [Here](IIT-Prediction/README.md)
+The main objective of this project is to predict clinical outcomes using EHR Data and modern ML/AI
+
+- IIT-Prediction - Start [Here](IIT-Prediction/README.md)
+- Technical Documentation - Start [Here](readme/technical_documentation.md)
 
 ## Docker Image
 
 To build the Docker image, first create a `config.yml` using the file in the `docker-resources` folder called `config.example.yml` as a guide. Then build the Docker image:
-
 
 ```
 docker build --tag ampath-iit-prediction-model-<model_version>:<version> .

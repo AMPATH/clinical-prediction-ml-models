@@ -14,18 +14,24 @@ h2o.init()
 
 dbConfig <- config::get()
 
+# Update this when the model version changes
 ml_model_version <- "V7"
 
+# this is the adult model; we only load it once
 ml_model_adult <- h2o.loadModel(
   "/app/model/y0_1days_adult_IIT/1_StackedEnsemble_BestOfFamily_1_AutoML_1_20230812_150159_auc_0.775/StackedEnsemble_BestOfFamily_1_AutoML_1_20230812_150159"
 )
 
+# this is the peds model
 ml_model_minor <- h2o.loadModel(
   "/app/model/y0_1day_minor_IIT/1_StackedEnsemble_BestOfFamily_1_AutoML_2_20230813_03957_auc_0.734/StackedEnsemble_BestOfFamily_1_AutoML_2_20230813_03957"
 )
 
+# here we also load the SQL script we use to extract data
 ml_sql <- read_file("/app/iit_prod_data_extract.sql")
 
+# we setup a connection pool here
+# strictly speak, a connection pool is probably overkill
 my_pool <- dbPool(
   drv = RMariaDB::MariaDB(),
   host = dbConfig$host,
@@ -44,6 +50,7 @@ function(pr) {
     })
 }
 
+# this just ensures that the API always responds with the headers needed for to avoid CORS errors
 #* @filter cors
 cors <- function(req, res) {
   res$setHeader("Access-Control-Allow-Origin", "*")
@@ -62,6 +69,8 @@ cors <- function(req, res) {
   }
 }
 
+# This is the actual endpoint definition and the place the code really starts
+
 #* @apiTitle AMPATH Interruption in Treatment Prediction Model API
 #* @apiDescription This API provides a simple method to run the model for a set of weeks
 
@@ -72,11 +81,15 @@ cors <- function(req, res) {
 #* @serializer json
 #* @post /predict
 function(
-  startDate = NA,
-  weeks = "1",
-  retrospective = "F"
+  startDate = NA,       # the startDate is the first day to start from
+                        # note that it will be adjusted to the Monday of the week its in as we always run in weekly batches
+  weeks = "1",          # the number of weeks to run; this is only used for testing
+  retrospective = "F"   # whether or not the query is retrospective (run against past data for testing) or prospective
+                        # (run normally); this mostly adjusts the query
 ) {
   retrospective <- as.logical(retrospective)
+
+  # If the startDate is not specified, it defaults to NA and we set it to a week from today
   if (is.na(startDate)) {
     startDate = clock::add_weeks(Sys.Date(), 1)
   }
@@ -92,6 +105,7 @@ function(
   # of the resuling week; this is our end date
   end_of_week <- week_end(clock::add_weeks(start_of_week, num_weeks))
 
+  # here we plug the variables into the query
   query <- DBI::sqlInterpolate(
     my_pool,
     ml_sql,
@@ -109,6 +123,7 @@ function(
   }
 
   # convert the dataframe to an h2o object, removing elements that are not predictors
+  # these also split the population by age
   h2o_predict_frame_adults <- predictors %>%
     filter(Age >= 18) %>%
     select(-c(person_id, encounter_id, location_id)) %>%
@@ -124,15 +139,20 @@ function(
   # run the predictions
   # TODO Why does this seem to claim we're running in train / validate mode?
   results_adults <- h2o.predict(ml_model_adult, h2o_predict_frame_adults)
-  on.exit(h2o.rm(results_adults))
-  results_minors <- h2o.predict(ml_model_minor, h2o_predict_frame_minors)
-  on.exit(h2o.rm(results_minors))
+  on.exit(h2o.rm(results_adults))   # on.exit for clean-up
 
+  results_minors <- h2o.predict(ml_model_minor, h2o_predict_frame_minors)
+  on.exit(h2o.rm(results_minors))   # on.exit for clean-up
+
+  # casting here ensures that these objects are copied as data frames,
+  # which makes things easier since most libraries can't interoperate with
+  # an H2OFrame
   results_adults_df <- as.data.frame(results_adults)
   results_minors_df <- as.data.frame(results_minors)
 
   # for the case where we need this, it should be safe to assume
   # that the start week has the correct values
+  # a cohort is the predictions generated for a given week
   cohort <- clock::date_format(clock::add_weeks(start_date, -1), format="%Y-W%U")
 
   # enrich the table of predictors with the results
@@ -170,6 +190,7 @@ function(
       .keep = "unused"
     )
 
+  # combine adult and peds results into one big frame
   prediction_result <- bind_rows(prediction_results_adults, prediction_results_minors)
 
   # add the rows from the prediction_result to the ml_weekly_predictions table
@@ -193,17 +214,24 @@ week_start <- function(date) {
   clock::date_floor(date, "week", origin = as.Date("1970-01-05"))
 }
 
+# sets origin to the first Sunday after 1970-01-01; this should guarantee that our
+# ceiling is the Sunday of the specified date
 week_end <- function(date) {
   date <- as.Date(date)
   clock::date_ceiling(date, "week", origin = as.Date("1970-01-04"))
 }
 
+# calculates the "week number" string for the week before the start date
 get_week_number <- function(date) {
   previous_week <- clock::add_weeks(week_start(date), -1)
   ywd <- clock::as_iso_year_week_day(previous_week)
   paste0(clock::get_year(ywd), "-W", stringr::str_pad(clock::get_week(ywd), 2, pad = "0"))
 }
 
+# embedded SQL queries
+# because the predictions are generated on Monday and then run on other days to catch newly added appointments
+# but we want the thresholds to remain roughly the same, we use these queries to determine what the threshold
+# was for this week to be considered "High Risk" or "Medium Risk"
 adult_risk_threshold_query <-
   "select
     'Medium Risk' as risk,
@@ -250,9 +278,10 @@ minor_risk_threshold_query <-
     and timestampdiff(YEAR, p.birthdate, mlp.rtc_date) < 18
   group by location_id;"
 
+# this is a utility function that mostly handles the risk thresholding
 predict_risk <- function(.data, cohort, age_category) {
   # arbitrary cut-off, but we expect one big batch per week
-  # and several small batches
+  # and several small batches; small batches are handled by this if
   if (nrow(.data) < 200) {
     cutoffs <- DBI::dbGetQuery(
       my_pool,
@@ -297,6 +326,9 @@ predict_risk <- function(.data, cohort, age_category) {
     }
   }
 
+  # for large batches, we calculate the thresholds from the predictions themselves
+  # the scoring system is that the 90th percentile of risk score are "High Risk" and the 80th percentile are "Medium Risk"
+  # we also break this down by location, so every location should have about 20% of its weekly visits flagged
   .data %>%
     group_by(location_id) %>%
     mutate(
