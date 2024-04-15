@@ -123,10 +123,14 @@ function(
 
   # run the predictions
   # TODO Why does this seem to claim we're running in train / validate mode?
-  results_adults <- h2o.predict(ml_model_adult, h2o_predict_frame_adults)
-  on.exit(h2o.rm(results_adults))
-  results_minors <- h2o.predict(ml_model_minor, h2o_predict_frame_minors)
-  on.exit(h2o.rm(results_minors))
+  maybe_o2_delete <- function (obj) {
+    if (is.h2o(obj)) h2o.rm(obj)
+  }
+
+  results_adults_h2o <- results_adults <- h2o.predict(ml_model_adult, h2o_predict_frame_adults)
+  on.exit(maybe_o2_delete(results_adults_h2o))
+  results_minors_h2o <- results_minors <- h2o.predict(ml_model_minor, h2o_predict_frame_minors)
+  on.exit(maybe_o2_delete(results_adults_h2o))
 
   results_adults <- as.data.frame(results_adults)
   results_minors <- as.data.frame(results_minors)
