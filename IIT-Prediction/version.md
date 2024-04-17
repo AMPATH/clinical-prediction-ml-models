@@ -262,6 +262,21 @@ Please save logs especially warning logs which we can use to track any drift in 
 
 ## V8
 
+### New predictors
+
+Here is a list of the new predictors that have been added
+
+```
+      'Days_Since_Last_VL_NA',
+      'Days_Since_Last_CD4_NA',
+      'BMI_baseline_NA',
+      'WHO_staging_baseline_NA',
+      'Regimen_Line_baseline_NA',
+      'HIV_disclosure_baseline_NA',
+      'CD4_baseline_NA',
+      'Viral_Load_log10_baseline_NA'
+```
+
 ### Removed Predictors
 
 ```
@@ -312,15 +327,11 @@ Here is a list of the new predictors that have been added
       'HIV_disclosure_baseline_NA',
       'CD4_baseline_NA',
       'Viral_Load_log10_baseline_NA',
-
-     'Current_Clinic_County',
-     'Size_Enrollments_Log10',
-     'Volume_Visits_Log10',
-     'Care Programme',
-     'Urban_Rural',
-     'Current Facility Level',
-     'Private_Public',
-     'Facility Type'
+      'Current_Clinic_County',
+      'Size_Enrollments_Log10',
+      'Volume_Visits_Log10',
+      'Care Programme',
+      'Facility Type'
 ```
 
 ### Removed predictors
@@ -342,23 +353,26 @@ Finally here is a list of all predictors:
 
 X=c(
 
-   c(
-
-   'Age','Age_NA',
-    'Gender' ,
+   c(    
+   
+   'Age','Age_NA', 
+   'Gender' ,  
    'num_1day_defaults_last_3visits',
    'Current_Clinic_County',
    'Days_defaulted_in_prev_enc', 'Days_defaulted_in_prev_enc_NA',
-    'Size_Enrollments_Log10',
-     'Volume_Visits_Log10',
+   'Size_Enrollments_Log10',
+   'Volume_Visits_Log10',
    'Care Programme',
    'Days_Since_Last_VL',  'Days_Since_Last_VL_NA',
-   'Visit_Number',  'HIV_disclosure_stage', 'HIV_disclosure_baseline_NA',
-   'Program_Name', 'Days_Since_Last_CD4', 'Days_Since_Last_CD4_NA',
-   'Month', 'TB_Test_Result',
-    'Viral_Load_log10', 'Viral_Load_log10_NA',
+   'Visit_Number',  
+   'HIV_disclosure_stage', 
+   'Program_Name', 
+   'Days_Since_Last_CD4', 'Days_Since_Last_CD4_NA',
+   'Month', 'TB_Test_Result', 
+   'Viral_Load_log10', 'Viral_Load_log10_NA',
    'BMI', 'BMI_NA',
    'CD4','CD4_NA',  'Facility Type'
+   
     )
 
 
