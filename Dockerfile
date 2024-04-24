@@ -30,7 +30,7 @@ RUN install2.r --error --skipinstalled \
 RUN Rscript -e "remotes::install_version('h2o', '3.42.0.2')"
 
 # Add the prediction model to the app
-COPY IIT-Prediction/model/V7 /app/model
+COPY IIT-Prediction/model/V9 /app/model
 # Add the production extraction query to the app
 COPY SQL/iit_prod_data_extract.sql /app/iit_prod_data_extract.sql
 

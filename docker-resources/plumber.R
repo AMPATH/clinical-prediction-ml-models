@@ -15,16 +15,16 @@ h2o.init()
 dbConfig <- config::get()
 
 # Update this when the model version changes
-ml_model_version <- "V7"
+ml_model_version <- "V9"
 
 # this is the adult model; we only load it once
 ml_model_adult <- h2o.loadModel(
-  "/app/model/y0_1days_adult_IIT/1_StackedEnsemble_BestOfFamily_1_AutoML_1_20230812_150159_auc_0.775/StackedEnsemble_BestOfFamily_1_AutoML_1_20230812_150159"
+  "/app/model/y0_1days_adult_IIT/2_StackedEnsemble_BestOfFamily_1_AutoML_8_20240411_135528_auc_0.739/StackedEnsemble_BestOfFamily_1_AutoML_8_20240411_135528"
 )
 
 # this is the peds model
 ml_model_minor <- h2o.loadModel(
-  "/app/model/y0_1day_minor_IIT/1_StackedEnsemble_BestOfFamily_1_AutoML_2_20230813_03957_auc_0.734/StackedEnsemble_BestOfFamily_1_AutoML_2_20230813_03957"
+  "/app/model/y0_1days_minor_IIT/1_StackedEnsemble_AllModels_1_AutoML_6_20240329_151542_auc_0.721/StackedEnsemble_AllModels_1_AutoML_6_20240329_151542"
 )
 
 # here we also load the SQL script we use to extract data
@@ -194,7 +194,7 @@ function(
   prediction_result <- bind_rows(prediction_results_adults, prediction_results_minors)
 
   # add the rows from the prediction_result to the ml_weekly_predictions table
-  DBI::dbAppendTable(my_pool, SQL('predictions.ml_weekly_predictions'), prediction_result)
+  DBI::dbAppendTable(my_pool, SQL('predictions.ml_weekly_predictions_test'), prediction_result)
 
   # return the result so the API returns *something*
   prediction_result
