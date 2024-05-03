@@ -35,5 +35,7 @@ from predictions.bungoma_may_preds bp
 left join etl.flat_hiv_summary_v15b fs
   on bp.person_id = fs.person_id
  and (bp.rtc_date = fs.prev_rtc_date)
+ -- 186 is a drug pick-up; 99999 is unknown
+ and fs.encounter_type_id not in (186, 99999)
 where is_clinical_encounter = 1
 order by bp.predicted_prob_disengage desc;
