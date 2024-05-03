@@ -10,28 +10,32 @@ library(DBI)
 library(pool)
 library(uuid)
 
+# h2o is the library that does the predictions
+# this will start a JVM and the h2o server on this container
 h2o.init()
 
+# the R config package is used to parse the config.yml file, which has the database connection
+# settings
 dbConfig <- config::get()
 
 # Update this when the model version changes
 ml_model_version <- "V9"
 
-# this is the adult model; we only load it once
+# now we load the models into the h2o server instance
+# adult model
 ml_model_adult <- h2o.loadModel(
   "/app/model/y0_1days_adult_IIT/2_StackedEnsemble_BestOfFamily_1_AutoML_8_20240411_135528_auc_0.739/StackedEnsemble_BestOfFamily_1_AutoML_8_20240411_135528"
 )
 
-# this is the peds model
+# peds model
 ml_model_minor <- h2o.loadModel(
   "/app/model/y0_1days_minor_IIT/1_StackedEnsemble_AllModels_1_AutoML_6_20240329_151542_auc_0.721/StackedEnsemble_AllModels_1_AutoML_6_20240329_151542"
 )
 
-# here we also load the SQL script we use to extract data
+# we also load the SQL query we use to generate the dataframe of records for prediction
 ml_sql <- read_file("/app/iit_prod_data_extract.sql")
 
-# we setup a connection pool here
-# strictly speak, a connection pool is probably overkill
+# finally, we establish a small connection pool to manage DB connections
 my_pool <- dbPool(
   drv = RMariaDB::MariaDB(),
   host = dbConfig$host,
@@ -39,6 +43,10 @@ my_pool <- dbPool(
   password = dbConfig$password,
   dbname = dbConfig$defaultDb
 )
+
+# at this point, Plumber will actually start, but we will have setup the h2o server, loaded the models
+# and attempted to connect to the database. That means that issues in any of those steps will cause this
+# script to fail early rather than waiting until we actually try to run things.
 
 # Custom router modifications
 #* @plumber
@@ -128,16 +136,22 @@ function(
     filter(Age >= 18) %>%
     select(-c(person_id, encounter_id, location_id)) %>%
     as.h2o()
+  # h2o uses a client-server model, so the as.h2o() above will actually create a copy
+  # of the dataframe in the h2o server; here we add a hook to ensure that we clean-up
+  # the dataframes from h2o when we're done with them to help ensure we don't swallow
+  # all the server memory.
+  #
+  # Every h2o object should be removed once we're done with it.
   on.exit(h2o.rm(h2o_predict_frame_adults))
 
+  # this creates the frame for pediatric patients
   h2o_predict_frame_minors <- predictors %>%
     filter(Age < 18) %>%
     select(-c(person_id, encounter_id, location_id)) %>%
     as.h2o()
-  on.exit(h2o.rm(h2o_predict_frame_minors))
+  on.exit(h2o.rm(h2o_predict_frame_minors))  # on.exit for clean-up
 
   # run the predictions
-  # TODO Why does this seem to claim we're running in train / validate mode?
   results_adults <- h2o.predict(ml_model_adult, h2o_predict_frame_adults)
   on.exit(h2o.rm(results_adults))   # on.exit for clean-up
 
@@ -145,16 +159,24 @@ function(
   on.exit(h2o.rm(results_minors))   # on.exit for clean-up
 
   # casting here ensures that these objects are copied as data frames,
-  # which makes things easier since most libraries can't interoperate with
-  # an H2OFrame
+  # which makes things easier since most libraries can't work with an H2OFrame
   results_adults_df <- as.data.frame(results_adults)
   results_minors_df <- as.data.frame(results_minors)
 
   # for the case where we need this, it should be safe to assume
   # that the start week has the correct values
   # a cohort is the predictions generated for a given week
+  # note that we use the week _before_ the start date; this is because the calls
+  # should be made a week before the RTC date
   cohort <- clock::date_format(clock::add_weeks(start_date, -1), format="%Y-W%U")
 
+  # the h2o result dataframes do not have the person_id, encounter_id, or location_id
+  # as these are not used in generating predictions, so here we add those back in
+  #
+  # IT IS IMPORTANT THAT THE FILTERING DONE HERE EXACTLY MATCHES THE FILTERING DONE
+  # WHEN CREATING THE h2o DATAFRAMES OR ELSE THE PREDICTIONS WILL NOT BE MATCHED TO
+  # THE CORRECT PATIENT
+  #
   # enrich the table of predictors with the results
   prediction_results_adults <- predictors %>%
     filter(Age >= 18) %>%
@@ -173,6 +195,7 @@ function(
       .keep = "unused"
     )
 
+  # ditto but for pediatric patients
   prediction_results_minors <- predictors %>%
     filter(Age < 18) %>%
     bind_cols(results_minors_df) %>%
