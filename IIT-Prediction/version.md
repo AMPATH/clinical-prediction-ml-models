@@ -408,3 +408,112 @@ clean.df= clean.long.df %>%
 ### Monitoring
 
 Please save logs especially warning logs which we can use to track any drift in concept or bad variables.
+
+## V9B
+
+Version 9B of the model is trained using 2 cohorts of datasets:
+
+- Adult - up to 04-04-2024
+- Minor - up to 04-04-2024
+
+
+In version 9B we have changed how we define the outcome variable (Y), please see below
+
+### Outcome Variable Changes
+
+We first remove drug refill encounter types then recalculate next encounter date. ETL's next_clinical_datetime_hiv has drug refill next encounter date, that's why we need to recalculate. See the code below:
+
+```
+clean.df= clean.long.df %>% 
+      filter(RTC_Date <= as.Date("2024-04-04") & Encounter_Date >= as.Date("2021-01-01") ) %>% # this is the db open & closure date
+      filter(encounter_type!= 186 & encounter_type!= 158) %>% # V9B - STEP1 => REMOVE DRUG REFILL ENCOUNTER TYPES
+      group_by(person_id)%>%
+      mutate(
+            Next_Encounter_Datetime = lead(Encounter_Date, order_by =Encounter_ID) # V9B - STEP2 =>  Lag next Enc Date instead of using ETL's next_clinical_datetime_hiv which has drug refill next encounter date
+
+      ) %>%
+      ungroup()
+
+```
+
+
+
+### New predictors
+
+Here is a list of the new predictors that have been added from version 9 to 9B
+
+None
+
+### Removed predictors
+
+Here is a list of the old predictors that have been removed from version 9 to 9B
+
+
+None
+
+### All predictors
+
+Finally here is a list of all predictors:
+
+```
+
+
+X=c(
+
+   c(    
+   
+   'Age','Age_NA', 
+   'Gender' ,  
+   'num_1day_defaults_last_3visits',
+   'Current_Clinic_County',
+   'Days_defaulted_in_prev_enc', 'Days_defaulted_in_prev_enc_NA',
+   'Size_Enrollments_Log10',
+   'Volume_Visits_Log10',
+   'Care Programme',
+   'Days_Since_Last_VL',  'Days_Since_Last_VL_NA',
+   'Visit_Number',  
+   'HIV_disclosure_stage', 
+   'Program_Name', 
+   'Days_Since_Last_CD4', 'Days_Since_Last_CD4_NA',
+   'Month', 'TB_Test_Result', 
+   'Viral_Load_log10', 'Viral_Load_log10_NA',
+   'BMI', 'BMI_NA',
+   'CD4','CD4_NA',  'Facility Type'
+   
+    )
+
+
+)
+
+
+```
+
+### Model to use?
+
+#### Adult Model
+
+IIT-Prediction/model/V9/y0*1days_adult_IIT/2_StackedEnsemble_BestOfFamily_*...
+
+Note: We use 2_StackedEnsemble_BestOfFamily_ instead of 1_StackedEnsemble_AllModel_, because 2_StackedEnsemble_BestOfFamily_ offers similar performance with less variability. 
+Note: Please remember to factorize all character predictors before scoring
+
+```
+clean.df= clean.long.df %>%
+      mutate_if(is.character, as.factor)
+```
+
+### Minor Model
+
+IIT-Prediction/model/V9/y0*1day_minor_IIT/2_StackedEnsemble_BestOfFamily_*...
+
+Note: We use 2_StackedEnsemble_BestOfFamily_ instead of 1_StackedEnsemble_AllModel_, because 2_StackedEnsemble_BestOfFamily_ offers similar performance with less variability.
+Note: Please remember to factorize all character predictors before scoring as shown below
+
+```
+clean.df= clean.long.df %>%
+      mutate_if(is.character, as.factor)
+```
+
+### Monitoring
+
+Please save logs especially warning logs which we can use to track any drift in concept or bad variables.
