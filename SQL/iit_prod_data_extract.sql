@@ -120,7 +120,7 @@ where
   and (fs.transfer_in_location_id is null or fs.transfer_in_location_id != 9999)
   and fs.is_clinical_encounter = 1
   -- don't generate predictions for patients who have transferred out
-  and fs.transfer_out is null
+  and fs.out_of_care is null
   -- substituted from the R script
   and fs.rtc_date between ?startDate and ?endDate
   and (fs.next_clinical_datetime_hiv is null
