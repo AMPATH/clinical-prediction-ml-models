@@ -107,7 +107,7 @@ where
     -- Uzima
     1, 13, 14, 15, 197, 198, 17, 227, 214, 306, 11, 229, 421, 422, 423, 420,
     -- April 2024 rollout (NB some are included above - 420, 421, 422, & 423)
-    211, 60, 323, 140, 4, 322, 351, 352, 208, 69, 208, 11, 229
+    211, 60, 323, 140, 4, 322, 351, 352, 208, 69, 208, 11, 229, 55, 315, 64, 334
   )
   -- filter encounters: 111 - LabResult, 99999 - lab encounter type
   -- these encounters are post-visit lab result entries and should not appear in predicted data
