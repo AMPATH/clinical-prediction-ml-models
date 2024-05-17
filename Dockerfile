@@ -27,7 +27,7 @@ RUN install2.r --error --skipinstalled \
     && rm -rf /tmp/downloaded_packages
 
 # The model always needs to run on the exact version of h2o used to train it
-RUN Rscript -e "remotes::install_version('h2o', '3.42.0.2')"
+RUN Rscript -e "remotes::install_version('h2o', '3.44.0.3')"
 
 # Add the prediction model to the app
 COPY IIT-Prediction/model/V9B /app/model

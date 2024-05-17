@@ -71,12 +71,12 @@ select
     coalesce(fs.hiv_disclosure_status_value, 'Not Done') as HIV_disclosure_stage,
     fs.tb_test_result as TB_Test_Result,
     convert(month(date(fs.rtc_date)), char) as 'Month',
-    mfm.clinic_county as Current_Clinc_County,
+    mfm.clinic_county as Current_Clinic_County,
     mfm.size_enrollments_log10 as Size_Enrollments_Log10,
     mfm.volume_visits_log10 as Volume_Visits_Log10,
     mfm.care_programme as 'Care Programme',
     mfm.facility_type as 'Facility Type',
-    program.name as 'Program Name'
+    program.name as Program_Name
 from etl.flat_hiv_summary_v15b as fs
         left join predictions.flat_ml_days_defaulted dd
                 on dd.encounter_id = fs.encounter_id
