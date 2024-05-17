@@ -24,12 +24,12 @@ ml_model_version <- "V9"
 # now we load the models into the h2o server instance
 # adult model
 ml_model_adult <- h2o.loadModel(
-  "/app/model/y0_1days_adult_IIT/2_StackedEnsemble_BestOfFamily_1_AutoML_8_20240411_135528_auc_0.739/StackedEnsemble_BestOfFamily_1_AutoML_8_20240411_135528"
+  "/app/model/y0_1days_adult_IIT/2_StackedEnsemble_BestOfFamily_1_AutoML_1_20240513_202609_auc_0.783/StackedEnsemble_BestOfFamily_1_AutoML_1_20240513_202609"
 )
 
 # peds model
 ml_model_minor <- h2o.loadModel(
-  "/app/model/y0_1days_minor_IIT/1_StackedEnsemble_AllModels_1_AutoML_6_20240329_151542_auc_0.721/StackedEnsemble_AllModels_1_AutoML_6_20240329_151542"
+  "/app/model/y0_1days_minor_IIT/2_StackedEnsemble_BestOfFamily_1_AutoML_2_20240513_235011_auc_0.725/StackedEnsemble_BestOfFamily_1_AutoML_2_20240513_235011"
 )
 
 # we also load the SQL query we use to generate the dataframe of records for prediction
