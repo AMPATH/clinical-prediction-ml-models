@@ -28,7 +28,9 @@ select
     fs.person_id,
     fs.encounter_id,
     fs.encounter_type,
-    fs.location_id,
+    -- note, if a patient transferred out to a known clinic, we use that as the clinic they are expected
+    -- to show at
+    coalesce(fs.transfer_out_location_id, null, fs.location_id),
     date(fs.rtc_date) as rtc_date,
     timestampdiff(YEAR, p.birthdate, fs.encounter_datetime) as Age,
     if(p.birthdate is null, 1, 0) as Age_NA,
@@ -101,7 +103,7 @@ from etl.flat_hiv_summary_v15b as fs
                 on mlp.encounter_id = fs.encounter_id
 where
   -- filter to only targetted locations
-  fs.location_id in (
+  coalesce(fs.transfer_out_location_id, null, fs.location_id) in (
     -- Dumisha
     26, 23, 319, 130, 313, 9, 78, 310, 20, 312, 12, 321, 8, 341, 342, 65, 314, 64, 83, 90, 106, 86, 336, 91, 320, 74, 76, 79, 100, 311, 75, 195, 19, 230,
     -- Uzima
@@ -119,7 +121,10 @@ where
   -- 9999 - transfered to non-AMPATH clinic, we discount these for the list of patient's that we care about trying to
   -- proactively follow-up on since we do not anticipate these patient's returning to AMPATH. If they do, they will be
   -- returned to normal status at whatever clinic they visit
-  and (fs.transfer_in_location_id is null or fs.transfer_in_location_id != 9999)
+  -- 9998 - transferred to different AMPATH clinic. We discount these as we have no indication of which clinic
+  -- the patient is transfering to; non-9998 values indicate the clinic transferred from
+  and (fs.transfer_in_location_id is null or fs.transfer_in_location_id not in (9998, 9999))
+  and (fs.transfer_out_location_id is null or fs.transfer_out_location_id not in (9998, 9999))
   and fs.is_clinical_encounter = 1
   -- don't generate predictions for patients who have transferred out
   and fs.out_of_care is null
