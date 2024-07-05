@@ -111,7 +111,17 @@ where
     -- April 2024 rollout (NB some are included above - 420, 421, 422, & 423) (Done May 2024)
     211, 60, 323, 140, 4, 322, 351, 352, 208, 69, 208, 218, 11, 229, 55, 315, 64, 334, 135, 335,
     -- May 2024 rollout (Done June 2024)
-    393, 396, 411, 492, 116, 397, 434, 438, 435, 439, 62, 333, 94, 406, 23, 319, 76, 338
+    393, 396, 411, 492, 116, 397, 434, 438, 435, 439, 62, 333, 94, 406, 23, 319, 76, 338,
+    -- June 2024 (Done July)
+    393, 116, 434, 435, 411, 353, 94, 23, 76, 62,
+    -- July 2024 (Done August)
+    102, 404, 134, 426, 203, 427, 77, 71, 78, 424, 90, 428, 425, 192,
+    -- August 2024 (Done September)
+    394, 196, 451, 13, 14, 15, 84, 206, 198, 2, 327, 91, 130, 130, 20, 199, 201, 58, 437, 98, 280, 313, 197, 186,
+    -- September 2024 (Done October)
+    72, 54, 414, 73, 74, 75, 12, 100, 148, 418, 106, 70,
+    -- October 2024 (Done November)
+    144, 416, 3, 330, 176, 28, 153, 496, 497, 31, 498
   )
   -- filter encounters: 111 - LabResult, 99999 - lab encounter type
   -- these encounters are post-visit lab result entries and should not appear in predicted data
