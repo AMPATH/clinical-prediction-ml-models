@@ -30,7 +30,7 @@ select
     fs.encounter_type,
     -- note, if a patient transferred out to a known clinic, we use that as the clinic they are expected
     -- to show at
-    coalesce(fs.transfer_out_location_id, null, fs.location_id),
+    coalesce(fs.transfer_out_location_id, null, fs.location_id) as location_id,
     date(fs.rtc_date) as rtc_date,
     timestampdiff(YEAR, p.birthdate, fs.encounter_datetime) as Age,
     if(p.birthdate is null, 1, 0) as Age_NA,
