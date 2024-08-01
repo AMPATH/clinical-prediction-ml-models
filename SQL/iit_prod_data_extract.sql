@@ -121,7 +121,9 @@ where
     -- September 2024 (Done October)
     72, 54, 414, 73, 74, 75, 12, 100, 148, 418, 106, 70,
     -- October 2024 (Done November)
-    144, 416, 3, 330, 176, 28, 153, 496, 497, 31, 498
+    144, 416, 3, 330, 176, 28, 153, 496, 497, 31, 498,
+    -- Fountain HC added retro-actively
+    147
   )
   -- filter encounters: 111 - LabResult, 99999 - lab encounter type
   -- these encounters are post-visit lab result entries and should not appear in predicted data
