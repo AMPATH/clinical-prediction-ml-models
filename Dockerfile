@@ -1,6 +1,6 @@
 FROM rstudio/plumber:latest
 
-ENV TZ "Africa/Nairobi"
+ENV TZ="Africa/Nairobi"
 
 # install base libraries we need
 RUN apt-get -y update -qq && apt-get -y --no-install-recommends install \

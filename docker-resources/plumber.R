@@ -89,13 +89,21 @@ cors <- function(req, res) {
 #* @serializer json
 #* @post /predict
 function(
-  startDate = NA,       # the startDate is the first day to start from
-                        # note that it will be adjusted to the Monday of the week its in as we always run in weekly batches
-  weeks = "1",          # the number of weeks to run; this is only used for testing
-  retrospective = "F"   # whether or not the query is retrospective (run against past data for testing) or prospective
-                        # (run normally); this mostly adjusts the query
+  startDate = NA,           # the startDate is the first day to start from
+                            # note that it will be adjusted to the Monday of the week its in as we always run in weekly batches
+  weeks = "1",              # the number of weeks to run; this is only used for testing
+  retrospective = "F",      # whether or not the query is retrospective (run against past data for testing) or prospective
+                            # (run normally); this mostly adjusts the query
+  retrospectiveTest = NA    # whether, when run retrospectively, to treat the run as a "test", so to generate all results
+                            # and not write to the predictions table
 ) {
   retrospective <- as.logical(retrospective)
+
+  if (is.na(retrospectiveTest)) {
+    retrospectiveTest = retrospective
+  } else {
+    retrospectiveTest = as.logical(retrospectiveTest)
+  }
 
   # If the startDate is not specified, it defaults to NA and we set it to a week from today
   if (is.na(startDate)) {
@@ -119,7 +127,8 @@ function(
     ml_sql,
     startDate = start_of_week,
     endDate = end_of_week,
-    retrospective = retrospective
+    retrospective = retrospective,
+    retrospectiveTest = retrospectiveTest
   )
 
   # run the query, giving us a dataframe
@@ -217,7 +226,9 @@ function(
   prediction_result <- bind_rows(prediction_results_adults, prediction_results_minors)
 
   # add the rows from the prediction_result to the ml_weekly_predictions table
-  DBI::dbAppendTable(my_pool, SQL('predictions.ml_weekly_predictions'), prediction_result)
+  if (!retrospectiveTest) {
+    DBI::dbAppendTable(my_pool, SQL('predictions.ml_weekly_predictions'), prediction_result)
+  }
 
   # return the result so the API returns *something*
   prediction_result

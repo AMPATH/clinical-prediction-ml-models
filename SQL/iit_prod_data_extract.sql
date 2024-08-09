@@ -149,4 +149,4 @@ where
   -- filter dead patients
   and fs.death_date is null
   -- if not run retrospectively, don't generate new predictions for existing cases
-  and (?retrospective or mlp.encounter_id is null);
+  and (?retrospectiveTest or mlp.encounter_id is null);
