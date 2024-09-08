@@ -492,7 +492,7 @@ X=c(
 
 #### Adult Model
 
-IIT-Prediction/model/V9/y0*1days_adult_IIT/2_StackedEnsemble_BestOfFamily_*...
+IIT-Prediction/model/V9/y0_1days_adult_IIT/2_StackedEnsemble_BestOfFamily_*...
 
 Note: We use 2_StackedEnsemble_BestOfFamily_ instead of 1_StackedEnsemble_AllModel_, because 2_StackedEnsemble_BestOfFamily_ offers similar performance with less variability. 
 Note: Please remember to factorize all character predictors before scoring
@@ -504,9 +504,105 @@ clean.df= clean.long.df %>%
 
 ### Minor Model
 
-IIT-Prediction/model/V9/y0*1day_minor_IIT/2_StackedEnsemble_BestOfFamily_*...
+IIT-Prediction/model/V9/y0_1day_minor_IIT/2_StackedEnsemble_BestOfFamily_*...
 
 Note: We use 2_StackedEnsemble_BestOfFamily_ instead of 1_StackedEnsemble_AllModel_, because 2_StackedEnsemble_BestOfFamily_ offers similar performance with less variability.
+Note: Please remember to factorize all character predictors before scoring as shown below
+
+```
+clean.df= clean.long.df %>%
+      mutate_if(is.character, as.factor)
+```
+
+### Monitoring
+
+Please save logs especially warning logs which we can use to track any drift in concept or bad variables.
+
+
+## V10
+
+Version 10 of the model is trained using 2 cohorts of datasets:
+
+- Adult - up to 04-04-2024
+- Minor - up to 04-04-2024
+
+
+In version 10 we have changed how we define the outcome variable (Y), please see below
+
+### Outcome Variable Changes
+
+Instead of using a Delta (number of days defaulted) of `>=1 days` we have changed to `>= 7 days`. Please see `y1` in: `IIT-Prediction/training scripts/V10/main.R`
+
+
+### New predictors
+
+Here is a list of the new predictors that have been added
+
+```
+num_7days_defaults_last_3visits
+```
+
+definition can be found here `IIT-Prediction/training scripts/V10/utils.R`
+
+### Removed predictors
+
+
+None
+
+### All predictors
+
+Finally here is a list of all predictors:
+
+```
+
+X=c(
+
+   c(    
+   
+   'Age','Age_NA', 
+   'Gender' ,  
+   'num_1day_defaults_last_3visits',
+   'num_7days_defaults_last_3visits',
+   'Current_Clinic_County',
+   'Days_defaulted_in_prev_enc', 'Days_defaulted_in_prev_enc_NA',
+   'Size_Enrollments_Log10',
+   'Volume_Visits_Log10',
+   'Care Programme',
+   'Days_Since_Last_VL',  'Days_Since_Last_VL_NA',
+   'Visit_Number',  
+   'HIV_disclosure_stage', 
+   'Program_Name', 
+   'Days_Since_Last_CD4', 'Days_Since_Last_CD4_NA',
+   'Month', 'TB_Test_Result', 
+   'Viral_Load_log10', 'Viral_Load_log10_NA',
+   'BMI', 'BMI_NA',
+   'CD4','CD4_NA',  'Facility Type'
+   
+    )
+
+
+)
+
+
+```
+
+### Model to use?
+
+#### Adult Model
+
+`IIT-Prediction/model/V10/y1_7days_adult_IIT/2_StackedEnsemble_BestOfFamily_*...`
+
+Note: Please remember to factorize all character predictors before scoring
+
+```
+clean.df= clean.long.df %>%
+      mutate_if(is.character, as.factor)
+```
+
+### Minor Model
+
+`IIT-Prediction/model/V10/y1_7days_adult_IIT/2_StackedEnsemble_BestOfFamily_*...`
+
 Note: Please remember to factorize all character predictors before scoring as shown below
 
 ```

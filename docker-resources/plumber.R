@@ -23,17 +23,32 @@ ml_model_version <- "V9"
 
 # now we load the models into the h2o server instance
 # adult model
-ml_model_adult <- h2o.loadModel(
+ml_model_adult_1day <- h2o.loadModel(
   "/app/model/y0_1days_adult_IIT/2_StackedEnsemble_BestOfFamily_1_AutoML_1_20240513_202609_auc_0.783/StackedEnsemble_BestOfFamily_1_AutoML_1_20240513_202609"
 )
 
+ml_model_adult_7day <- h2o.loadModel(
+  "/app/model/y1_7days_adult_IIT/1_StackedEnsemble_AllModels_1_AutoML_1_20240808_92356_auc_0.835/StackedEnsemble_AllModels_1_AutoML_1_20240808_92356"
+)
+
 # peds model
-ml_model_minor <- h2o.loadModel(
+ml_model_minor_1day <- h2o.loadModel(
+  "/app/model/y0_1days_minor_IIT/2_StackedEnsemble_BestOfFamily_1_AutoML_2_20240513_235011_auc_0.725/StackedEnsemble_BestOfFamily_1_AutoML_2_20240513_235011"
+)
+
+ml_model_minor_7day <- h2o.loadModel(
   "/app/model/y0_1days_minor_IIT/2_StackedEnsemble_BestOfFamily_1_AutoML_2_20240513_235011_auc_0.725/StackedEnsemble_BestOfFamily_1_AutoML_2_20240513_235011"
 )
 
 # we also load the SQL query we use to generate the dataframe of records for prediction
 ml_sql <- read_file("/app/iit_prod_data_extract.sql")
+
+# because the predictions are generated on Monday and then run on other days to catch newly added appointments
+# but we want the thresholds to remain roughly the same, we use these queries to determine what the threshold
+# was for this week to be considered "High Risk" or "Medium Risk"
+adult_risk_threshold_query <- read_file("/app/iit_prod_threshold_adult.sql")
+
+minor_risk_threshold_query <- read_file("/app/iit_prod_threshold_pediatric.sql")
 
 # finally, we establish a small connection pool to manage DB connections
 my_pool <- dbPool(
@@ -161,16 +176,26 @@ function(
   on.exit(h2o.rm(h2o_predict_frame_minors))  # on.exit for clean-up
 
   # run the predictions
-  results_adults <- h2o.predict(ml_model_adult, h2o_predict_frame_adults)
-  on.exit(h2o.rm(results_adults))   # on.exit for clean-up
+  results_adults_1day <- h2o.predict(ml_model_adult_1day, h2o_predict_frame_adults)
+  on.exit(h2o.rm(results_adults_1day))   # on.exit for clean-up
 
-  results_minors <- h2o.predict(ml_model_minor, h2o_predict_frame_minors)
-  on.exit(h2o.rm(results_minors))   # on.exit for clean-up
+  results_adults_7day <- h2o.predict(ml_model_adult_7day, h2o_predict_frame_adults)
+  on.exit(h2o.rm(results_adults_7day))   # on.exit for clean-up
+
+  results_minors_1day <- h2o.predict(ml_model_minor_1day, h2o_predict_frame_minors)
+  on.exit(h2o.rm(results_minors_1day))   # on.exit for clean-up
+
+  results_minors_7day <- h2o.predict(ml_model_minor_7day, h2o_predict_frame_minors)
+  on.exit(h2o.rm(results_minors_7day))   # on.exit for clean-up
 
   # casting here ensures that these objects are copied as data frames,
   # which makes things easier since most libraries can't work with an H2OFrame
-  results_adults_df <- as.data.frame(results_adults)
-  results_minors_df <- as.data.frame(results_minors)
+  results_adults_1day_df <- as.data.frame(results_adults_1day)
+  results_adults_7day_df <- as.data.frame(results_adults_7day) %>%
+    select(predicted_prob_disengage_7day = Disengaged)
+  results_minors_1day_df <- as.data.frame(results_minors_1day)
+  results_minors_7day_df <- as.data.frame(results_minors_7day) %>%
+    select(predicted_prob_disengage_7day = Disengaged)
 
   # for the case where we need this, it should be safe to assume
   # that the start week has the correct values
@@ -189,9 +214,10 @@ function(
   # enrich the table of predictors with the results
   prediction_results_adults <- predictors %>%
     filter(Age >= 18) %>%
-    bind_cols(results_adults_df) %>%
+    bind_cols(results_adults_1day_df) %>%
+    bind_cols(results_adults_7day_df) %>%
     # reduce data frame and rename the result
-    select(person_id, encounter_id, location_id, rtc_date, predicted_prob_disengage = Disengaged) %>%
+    select(person_id, encounter_id, location_id, rtc_date, predicted_prob_disengage = Disengaged, predicted_prob_disengage_7day) %>%
     # calculate the patient's risk category
     predict_risk(cohort, "adults") %>%
     # add per-row metadata about the run
@@ -207,9 +233,10 @@ function(
   # ditto but for pediatric patients
   prediction_results_minors <- predictors %>%
     filter(Age < 18) %>%
-    bind_cols(results_minors_df) %>%
+    bind_cols(results_minors_1day_df) %>%
+    bind_cols(results_minors_7day_df) %>%
     # reduce data frame and rename the result
-    select(person_id, encounter_id, location_id, rtc_date, predicted_prob_disengage = Disengaged) %>%
+    select(person_id, encounter_id, location_id, rtc_date, predicted_prob_disengage = Disengaged, predicted_prob_disengage_7day) %>%
     # calculate the patient's risk category
     predict_risk(cohort, "minors") %>%
     # add per-row metadata about the run
@@ -229,7 +256,7 @@ function(
   if (!retrospectiveTest) {
     DBI::dbAppendTable(my_pool, SQL('predictions.ml_weekly_predictions'), prediction_result)
   }
-
+  
   # return the result so the API returns *something*
   prediction_result
 }
@@ -262,56 +289,6 @@ get_week_number <- function(date) {
   paste0(clock::get_year(ywd), "-W", stringr::str_pad(clock::get_week(ywd), 2, pad = "0"))
 }
 
-# embedded SQL queries
-# because the predictions are generated on Monday and then run on other days to catch newly added appointments
-# but we want the thresholds to remain roughly the same, we use these queries to determine what the threshold
-# was for this week to be considered "High Risk" or "Medium Risk"
-adult_risk_threshold_query <-
-  "select
-    'Medium Risk' as risk,
-    location_id,
-    min(predicted_prob_disengage) as probability_threshold
-  from predictions.ml_weekly_predictions mlp
-    join amrs.person p
-      on mlp.person_id = p.person_id
-  where predicted_risk = 'Medium Risk' and week = ?week
-    and timestampdiff(YEAR, p.birthdate, mlp.rtc_date) >= 18
-  group by location_id
-  union
-  select
-    'High Risk' as risk,
-    location_id,
-    min(predicted_prob_disengage) as probability_threshold
-  from predictions.ml_weekly_predictions mlp
-    join amrs.person p
-      on mlp.person_id = p.person_id
-  where predicted_risk = 'High Risk' and week = ?week
-    and timestampdiff(YEAR, p.birthdate, mlp.rtc_date) >= 18
-  group by location_id;"
-
-minor_risk_threshold_query <-
-  "select
-    'Medium Risk' as risk,
-    location_id,
-    min(predicted_prob_disengage) as probability_threshold
-  from predictions.ml_weekly_predictions mlp
-    join amrs.person p
-      on mlp.person_id = p.person_id
-  where predicted_risk = 'Medium Risk' and week = ?week
-    and timestampdiff(YEAR, p.birthdate, mlp.rtc_date) < 18
-  group by location_id
-  union
-  select
-    'High Risk' as risk,
-    location_id,
-    min(predicted_prob_disengage) as probability_threshold
-  from predictions.ml_weekly_predictions mlp
-    join amrs.person p
-      on mlp.person_id = p.person_id
-  where predicted_risk = 'High Risk' and week = ?week
-    and timestampdiff(YEAR, p.birthdate, mlp.rtc_date) < 18
-  group by location_id;"
-
 # this is a utility function that mostly handles the risk thresholding
 predict_risk <- function(.data, cohort, age_category) {
   # arbitrary cut-off, but we expect one big batch per week
@@ -328,11 +305,19 @@ predict_risk <- function(.data, cohort, age_category) {
 
     if (nrow(cutoffs) == 2) {
       medium_risk <- cutoffs %>%
-        filter(risk == "Medium Risk") %>%
+        filter(risk == "Medium Risk" & model_type == "1 day") %>%
+        select(location_id, probability_threshold)
+
+      medium_risk_7day <- cutoffs %>%
+        filter(risk == "Medium Risk" & model_type == "7 day") %>%
         select(location_id, probability_threshold)
 
       high_risk <- cutoffs %>%
-        filter(risk == "High Risk") %>%
+        filter(risk == "High Risk" & model_type == "1 day") %>%
+        select(location_id, probability_threshold)
+
+      high_risk_7day <- cutoffs %>%
+        filter(risk == "High Risk" & model_type == "7 day") %>%
         select(location_id, probability_threshold)
 
       # if we have risk thresholds, just use them
@@ -343,13 +328,25 @@ predict_risk <- function(.data, cohort, age_category) {
             hrisk_threshold = high_risk %>%
               filter(location_id == cur_group()$location_id) %>%
               select(probability_threshold) %>% pull,
+            hrisk_threshold_7day = high_risk_7day %>%
+              filter(location_id == cur_group()$location_id) %>%
+              select(probability_threshold) %>% pull,
             mrisk_threshold = medium_risk %>%
+              filter(location_id == cur_group()$location_id) %>%
+              select(probability_threshold) %>% pull,
+            mrisk_threshold_7day = medium_risk_7day %>%
               filter(location_id == cur_group()$location_id) %>%
               select(probability_threshold) %>% pull,
             predicted_risk =
               case_when(
                 predicted_prob_disengage >= hrisk_threshold ~ "High Risk",
                 predicted_prob_disengage >= mrisk_threshold ~ "Medium Risk",
+                .default = NA_character_
+              ),
+            predicted_risk_7day =
+              case_when(
+                predicted_prob_disengage_7day >= hrisk_threshold_7day ~ "High Risk",
+                predicted_prob_disengage_7day >= mrisk_threshold_7day ~ "Medium Risk",
                 .default = NA_character_
               ),
             .keep = "all"
@@ -378,13 +375,34 @@ predict_risk <- function(.data, cohort, age_category) {
     ungroup() %>%
     select(-c(percentile)) %>%
     mutate(
-      percentile = percent_rank(predicted_prob_disengage),
-      predicted_risk =
+      percentile = percent_rank(predicted_prob_disengage_7day),
+      predicted_risk_7day =
         case_when(
-          !is.na(predicted_risk) ~ predicted_risk,
           percentile >= .9 ~ "High Risk",
           percentile >= .8 ~ "Medium Risk",
           .default = NA_character_
+        ),
+      .keep = "all"
+    ) %>%
+    ungroup() %>%
+    select(-c(percentile)) %>%
+    mutate(
+      percentile = percent_rank(predicted_prob_disengage),
+      predicted_risk =
+        case_when(
+          percentile >= .9 ~ "High Risk",
+          percentile >= .8 & (is_na(predicted_risk) | predicted_risk != "High Risk") ~ "Medium Risk",
+          .default = predicted_risk
+        )
+    )%>%
+    select(-c(percentile)) %>%
+    mutate(
+      percentile = percent_rank(predicted_prob_disengage_7day),
+      predicted_risk_7day =
+        case_when(
+          percentile >= .9 ~ "High Risk",
+          percentile >= .8 & (is_na(predicted_risk_7day) | predicted_risk_7day != "High Risk") ~ "Medium Risk",
+          .default = predicted_risk
         )
     )%>%
     select(-c(percentile))

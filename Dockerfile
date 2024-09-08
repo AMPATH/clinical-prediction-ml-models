@@ -24,15 +24,8 @@ RUN install2.r --error --skipinstalled \
     readr \
     RMariaDB \
     DBI \
+    h2o \
     && rm -rf /tmp/downloaded_packages
-
-# The model always needs to run on the exact version of h2o used to train it
-RUN Rscript -e "remotes::install_version('h2o', '3.44.0.3')"
-
-# Add the prediction model to the app
-COPY IIT-Prediction/model/V9B /app/model
-# Add the production extraction query to the app
-COPY SQL/iit_prod_data_extract.sql /app/iit_prod_data_extract.sql
 
 # The next scripts are used for cron jobs
 # this script triggers the predictions to run by hitting the API endpoint
@@ -53,6 +46,15 @@ RUN chmod 0744 /docker-entrypoint.sh
 COPY docker-resources/crontab /etc/cron.d/iit-crontab
 RUN chmod 0644 /etc/cron.d/iit-crontab
 RUN crontab -u root /etc/cron.d/iit-crontab
+
+# Add the prediction models to the app
+COPY IIT-Prediction/model/V9B /app/model
+COPY IIT-Prediction/model/V10 /app/model
+# Add the production extraction query to the app
+COPY SQL/iit_prod_data_extract.sql /app/iit_prod_data_extract.sql
+# Add the procution threshold queries to the app
+COPY SQL/iit_prod_threshold_adult.sql /app/iit_prod_threshold_adult.sql
+COPY SQL/iit_prod_threshold_adult.sql /app/iit_prod_threshold_pediatric.sql
 
 # now we also need to add the R code used here
 # this R code actually runs the stored procedures for run_daily_stored_procedures.sh
