@@ -115,7 +115,7 @@ where
     -- June 2024 (Done July)
     393, 116, 434, 435, 411, 353, 94, 23, 76, 62,
     -- July 2024 (Done August)
-    102, 404, 134, 426, 203, 427, 77, 71, 78, 424, 90, 428, 425, 192,
+    102, 404, 134, 426, 203, 427, 77, 71, 78, 424, 90, 317, 428, 425, 192,
     -- August 2024 (Done September)
     394, 196, 451, 13, 14, 15, 84, 206, 198, 2, 327, 91, 130, 130, 20, 199, 201, 58, 437, 98, 280, 313, 197, 186,
     -- September 2024 (Done October)
@@ -149,4 +149,4 @@ where
   -- filter dead patients
   and fs.death_date is null
   -- if not run retrospectively, don't generate new predictions for existing cases
-  and (?retrospective or mlp.encounter_id is null);
+  and (?retrospectiveTest or mlp.encounter_id is null);
