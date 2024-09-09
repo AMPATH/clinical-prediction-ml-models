@@ -256,7 +256,7 @@ function(
   if (!retrospectiveTest) {
     DBI::dbAppendTable(my_pool, SQL('predictions.ml_weekly_predictions'), prediction_result)
   }
-  
+
   # return the result so the API returns *something*
   prediction_result
 }
@@ -391,7 +391,7 @@ predict_risk <- function(.data, cohort, age_category) {
       predicted_risk =
         case_when(
           percentile >= .9 ~ "High Risk",
-          percentile >= .8 & (is_na(predicted_risk) | predicted_risk != "High Risk") ~ "Medium Risk",
+          percentile >= .8 & (is.na(predicted_risk) | predicted_risk != "High Risk") ~ "Medium Risk",
           .default = predicted_risk
         )
     )%>%
@@ -401,7 +401,7 @@ predict_risk <- function(.data, cohort, age_category) {
       predicted_risk_7day =
         case_when(
           percentile >= .9 ~ "High Risk",
-          percentile >= .8 & (is_na(predicted_risk_7day) | predicted_risk_7day != "High Risk") ~ "Medium Risk",
+          percentile >= .8 & (is.na(predicted_risk_7day) | predicted_risk_7day != "High Risk") ~ "Medium Risk",
           .default = predicted_risk
         )
     )%>%
