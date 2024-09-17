@@ -192,12 +192,10 @@ function(
   # which makes things easier since most libraries can't work with an H2OFrame
   results_adults_1day_df <- as.data.frame(results_adults_1day)
   results_adults_7day_df <- as.data.frame(results_adults_7day) %>%
-    select(predicted_prob_disengage_7day = Disengaged) %>%
-    mutate(predicted_prob_disengage_7day = predicted_prob_disengage_7day * 10)
+    select(predicted_prob_disengage_7day = Disengaged)
   results_minors_1day_df <- as.data.frame(results_minors_1day)
   results_minors_7day_df <- as.data.frame(results_minors_7day) %>%
-    select(predicted_prob_disengage_7day = Disengaged) %>%
-    mutate(predicted_prob_disengage_7day = predicted_prob_disengage_7day * 10)
+    select(predicted_prob_disengage_7day = Disengaged)
 
   # for the case where we need this, it should be safe to assume
   # that the start week has the correct values
@@ -376,6 +374,7 @@ predict_risk <- function(.data, cohort, age_category) {
     ) %>%
     ungroup() %>%
     select(-c(percentile)) %>%
+    group_by(location_id) %>%
     mutate(
       percentile = percent_rank(predicted_prob_disengage_7day),
       predicted_risk_7day =
