@@ -192,10 +192,12 @@ function(
   # which makes things easier since most libraries can't work with an H2OFrame
   results_adults_1day_df <- as.data.frame(results_adults_1day)
   results_adults_7day_df <- as.data.frame(results_adults_7day) %>%
-    select(predicted_prob_disengage_7day = Disengaged)
+    select(predicted_prob_disengage_7day = Disengaged) %>%
+    mutate(predicted_prob_disengage_7day = predicted_prob_disengage_7day * 10)
   results_minors_1day_df <- as.data.frame(results_minors_1day)
   results_minors_7day_df <- as.data.frame(results_minors_7day) %>%
-    select(predicted_prob_disengage_7day = Disengaged)
+    select(predicted_prob_disengage_7day = Disengaged) %>%
+    mutate(predicted_prob_disengage_7day = predicted_prob_disengage_7day * 10)
 
   # for the case where we need this, it should be safe to assume
   # that the start week has the correct values
