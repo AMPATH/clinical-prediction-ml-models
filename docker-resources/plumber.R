@@ -361,7 +361,6 @@ predict_risk <- function(.data, cohort, age_category) {
   # the scoring system is that the 90th percentile of risk score are "High Risk" and the 80th percentile are "Medium Risk"
   # we also break this down by location, so every location should have about 20% of its weekly visits flagged
   .data %>%
-    group_by(location_id) %>%
     mutate(
       percentile = percent_rank(predicted_prob_disengage),
       predicted_risk =
@@ -371,10 +370,8 @@ predict_risk <- function(.data, cohort, age_category) {
           .default = NA_character_
         ),
       .keep = "all"
-    ) %>%
-    ungroup() %>%
+    )%>%
     select(-c(percentile)) %>%
-    group_by(location_id) %>%
     mutate(
       percentile = percent_rank(predicted_prob_disengage_7day),
       predicted_risk_7day =
@@ -384,9 +381,9 @@ predict_risk <- function(.data, cohort, age_category) {
           .default = NA_character_
         ),
       .keep = "all"
-    ) %>%
-    ungroup() %>%
+    )%>%
     select(-c(percentile)) %>%
+    group_by(location_id) %>%
     mutate(
       percentile = percent_rank(predicted_prob_disengage),
       predicted_risk =
@@ -394,17 +391,22 @@ predict_risk <- function(.data, cohort, age_category) {
           percentile >= .9 ~ "High Risk",
           percentile >= .8 & (is.na(predicted_risk) | predicted_risk != "High Risk") ~ "Medium Risk",
           .default = predicted_risk
-        )
-    )%>%
+        ),
+      .keep = "all"
+    ) %>%
+    ungroup() %>%
     select(-c(percentile)) %>%
+    group_by(location_id) %>%
     mutate(
       percentile = percent_rank(predicted_prob_disengage_7day),
       predicted_risk_7day =
         case_when(
           percentile >= .9 ~ "High Risk",
           percentile >= .8 & (is.na(predicted_risk_7day) | predicted_risk_7day != "High Risk") ~ "Medium Risk",
-          .default = predicted_risk
-        )
-    )%>%
+          .default = predicted_risk_7day
+        ),
+      .keep = "all"
+    ) %>%
+    ungroup() %>%
     select(-c(percentile))
 }
