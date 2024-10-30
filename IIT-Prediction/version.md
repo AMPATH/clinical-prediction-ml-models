@@ -613,3 +613,159 @@ clean.df= clean.long.df %>%
 ### Monitoring
 
 Please save logs especially warning logs which we can use to track any drift in concept or bad variables.
+
+
+## V11
+
+Version 11 of the model is trained using 2 cohorts of datasets:
+
+- Adult - up to 2024-09-30
+- Minor - up to 2024-09-30
+
+
+In version 11 we have changed how we define the outcome variable (Y), please see below
+
+### Outcome Variable Changes
+
+The definitions for the outcome variables have changed. Please see `disengagement-1day` and `disengagement-7days` in: `IIT-Prediction/training scripts/V11/utils.R`
+
+```
+ ######################## Modified in V11 ###############################################
+      
+       # If Next Encounter type is 186 or 153, set the response variables to NA ==>  Modified in V11
+      `disengagement-1day` = factor(if_else(  Next_Encounter_Type %in% c(186,153,158), NA, `disengagement-1day`)),
+      `disengagement-2wks` = factor(if_else(  Next_Encounter_Type %in% c(186,153,158), NA, `disengagement-2wks`)),
+      `disengagement-1month` = factor(if_else(  Next_Encounter_Type %in% c(186,153,158), NA, `disengagement-1month`)),
+      `disengagement-3month` = factor(if_else(  Next_Encounter_Type %in% c(186,153,158), NA, `disengagement-3month`)),
+      `disengagement-7days` = factor(if_else(  Next_Encounter_Type %in% c(186,153,158), NA, `disengagement-7days`)),
+      
+      # Binary version of the response variable
+      `disengagement-1day_bin`  = ifelse(`disengagement-1day` == "Disengaged", TRUE, FALSE),
+      `disengagement-2wks_bin`  = ifelse(`disengagement-2wks` == "Disengaged", TRUE, FALSE),
+      `disengagement-1month_bin`  = ifelse(`disengagement-1month` == "Disengaged", TRUE, FALSE),
+      `disengagement-3month_bin`  = ifelse(`disengagement-3month` == "Disengaged", TRUE, FALSE),
+      `disengagement-7days_bin`  = ifelse(`disengagement-7days` == "Disengaged", TRUE, FALSE),
+
+```
+
+
+### Predictors related to previous IIT have changed 
+
+The definitions for number of missed-visits out of the last three have changed. Please see: `IIT-Prediction/training scripts/V11/utils.R`
+
+```
+      # Number of non-clinical encounters in the last 3 visits ==> Added in V11
+      num_of_med_pickups_in_last_3visits = as.double(lag(rollapplyr(is.na(`disengagement-1day`), 3, 
+                                                                    sum_ignore_na, partial =T),order_by = Encounter_ID)) %>% replace_na(0),
+      
+      # Number of days defaulted in the previous CLINICAL encounters ==> Added V11
+      is_non_med_pickup_visit = if_else(encounter_type %nin% c(186,153,158), 1, 0),
+      index_of_last_clinical_visit =  na_if(lag(cummax(row_number() * is_non_med_pickup_visit),order_by = Encounter_ID), 0),
+      Days_defaulted_in_prev_enc = `Days defaulted`[index_of_last_clinical_visit], # Modified in V11
+ 
+      # Number of missed-visit out of the last three for each endpoint Y ==> V11
+      num_2wks_defaults_last_3visits = as.double(lag(rollapplyr(`disengagement-2wks_bin`, 3+num_of_med_pickups_in_last_3visits,
+                                                                sum_ignore_na, partial =T),order_by = Encounter_ID)) %>% replace_na(0),
+      num_1day_defaults_last_3visits = as.double(lag(rollapplyr(`disengagement-1day_bin`, 3+num_of_med_pickups_in_last_3visits, 
+                                                                sum_ignore_na, partial =T),order_by = Encounter_ID)) %>% replace_na(0),
+      num_7days_defaults_last_3visits = as.double(lag(rollapplyr(`disengagement-7days_bin`, 3+num_of_med_pickups_in_last_3visits, 
+                                                                 sum_ignore_na, partial =T),order_by = Encounter_ID)) %>% replace_na(0),
+      num_1month_defaults_last_3visits = as.double(lag(rollapplyr(`disengagement-1month_bin`, 3+num_of_med_pickups_in_last_3visits, 
+                                                                  sum_ignore_na, partial =T),order_by = Encounter_ID)) %>% replace_na(0),
+```
+
+### Data Cleaning changes
+
+#### Days_defaulted_in_prev_enc_log changes
+
+```
+     Days_defaulted_in_prev_enc =  if_else(Days_defaulted_in_prev_enc<=-31, -31,Days_defaulted_in_prev_enc),
+     Days_defaulted_in_prev_enc =  if_else(Days_defaulted_in_prev_enc>365, 365,Days_defaulted_in_prev_enc), 
+     Days_defaulted_in_prev_enc_log = log(Days_defaulted_in_prev_enc+32), # Added in V11
+```
+
+#### BMI changes
+
+```
+    BMI =  if_else(between(BMI, 10, 35), BMI,NA_real_), # Modified in V11
+```
+
+### New Predictors
+
+ - We have dropped `Days_defaulted_in_prev_enc` and `Days_defaulted_in_prev_enc_NA`
+ - We have substituted with  `Days_defaulted_in_prev_enc_log` and `Days_defaulted_in_prev_enc_log_NA`
+
+
+### All Predictors
+
+Finally here is a list of all predictors:
+
+```
+
+X=c(
+
+   c(    
+   
+   'Age','Age_NA', 
+   'Gender' ,  
+   'num_1day_defaults_last_3visits',
+   'num_7days_defaults_last_3visits',
+   'Current_Clinic_County',
+   'Days_defaulted_in_prev_enc_log', 'Days_defaulted_in_prev_enc_log_NA', # Modified in V11
+   'Size_Enrollments_Log10',
+   'Volume_Visits_Log10',
+   'Care Programme',
+   'Days_Since_Last_VL',  'Days_Since_Last_VL_NA',
+   'Visit_Number',  
+   'HIV_disclosure_stage', 
+   'Program_Name', 
+   'Days_Since_Last_CD4', 'Days_Since_Last_CD4_NA',
+   'Month', 'TB_Test_Result', 
+   'Viral_Load_log10', 'Viral_Load_log10_NA',
+   'BMI', 'BMI_NA',
+   'CD4','CD4_NA',  'Facility Type'
+   
+    )
+
+
+)
+
+
+```
+
+### 1-day Model to use?
+
+#### Adult Model
+
+`IIT-Prediction/model/V11/y0_1day_adult_IIT/1_StackedEnsemble_BestOfFamily_*...`
+
+Note: Please note that 1day model only  does not have this predictor 'num_7days_defaults_last_3visits'
+
+
+#### Minor Model
+
+`IIT-Prediction/model/V11/y0_1day_minor_IIT/1_StackedEnsemble_BestOfFamily_*...`
+
+Note: Please note that 1day model does not have this predictor 'num_7days_defaults_last_3visits'
+
+
+
+### 7-days Model to use?
+
+#### Adult Model
+
+`IIT-Prediction/model/V11/y1_7days_adult_IIT/1_StackedEnsemble_BestOfFamily_*...`
+
+Note: Please note that 7days model has both these predictors: 'num_1day_defaults_last_3visits', 'num_7days_defaults_last_3visits'
+
+
+#### Minor Model
+
+`IIT-Prediction/model/V11/y1_7days_minor_IIT/1_StackedEnsemble_BestOfFamily_*...`
+
+Note: Please note that 7days model has both these predictors: 'num_1day_defaults_last_3visits', 'num_7days_defaults_last_3visits'
+
+
+### Monitoring
+
+Please save logs especially warning logs which we can use to track any drift in concept or bad variables.
