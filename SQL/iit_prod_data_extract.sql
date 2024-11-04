@@ -125,7 +125,7 @@ where
     -- Fountain HC added retro-actively
     147,
     -- Langas MCH added retro-actively
-    324,
+    324
   )
   -- filter encounters: 111 - LabResult, 99999 - lab encounter type
   -- these encounters are post-visit lab result entries and should not appear in predicted data
