@@ -19,25 +19,25 @@ h2o.init()
 dbConfig <- config::get()
 
 # Update this when the model version changes
-ml_model_version <- "V9"
+ml_model_version <- "V11"
 
 # now we load the models into the h2o server instance
 # adult model
 ml_model_adult_1day <- h2o.loadModel(
-  "/app/model/y0_1days_adult_IIT/2_StackedEnsemble_BestOfFamily_1_AutoML_1_20240513_202609_auc_0.783/StackedEnsemble_BestOfFamily_1_AutoML_1_20240513_202609"
+  "/app/model/y0_1day_adult_IIT/1_StackedEnsemble_BestOfFamily_1_AutoML_17_20241028_160939_auc_0.722/StackedEnsemble_BestOfFamily_1_AutoML_17_20241028_160939"
 )
 
 ml_model_adult_7day <- h2o.loadModel(
-  "/app/model/y1_7days_adult_IIT/1_StackedEnsemble_AllModels_1_AutoML_1_20240808_92356_auc_0.835/StackedEnsemble_AllModels_1_AutoML_1_20240808_92356"
+  "/app/model/y1_7days_adult_IIT/1_StackedEnsemble_BestOfFamily_1_AutoML_15_20241028_105945_auc_0.756/StackedEnsemble_BestOfFamily_1_AutoML_15_20241028_105945"
 )
 
 # peds model
 ml_model_minor_1day <- h2o.loadModel(
-  "/app/model/y0_1days_minor_IIT/2_StackedEnsemble_BestOfFamily_1_AutoML_2_20240513_235011_auc_0.725/StackedEnsemble_BestOfFamily_1_AutoML_2_20240513_235011"
+  "/app/model/y0_1day_minor_IIT/1_StackedEnsemble_BestOfFamily_1_AutoML_18_20241028_193321_auc_0.711/StackedEnsemble_BestOfFamily_1_AutoML_18_20241028_193321"
 )
 
 ml_model_minor_7day <- h2o.loadModel(
-  "/app/model/y0_1days_minor_IIT/2_StackedEnsemble_BestOfFamily_1_AutoML_2_20240513_235011_auc_0.725/StackedEnsemble_BestOfFamily_1_AutoML_2_20240513_235011"
+  "/app/model/y1_7days_minor_IIT/1_StackedEnsemble_AllModels_1_AutoML_16_20241028_150402_auc_0.749/StackedEnsemble_AllModels_1_AutoML_16_20241028_150402"
 )
 
 # we also load the SQL query we use to generate the dataframe of records for prediction
@@ -190,10 +190,12 @@ function(
 
   # casting here ensures that these objects are copied as data frames,
   # which makes things easier since most libraries can't work with an H2OFrame
-  results_adults_1day_df <- as.data.frame(results_adults_1day)
+  results_adults_1day_df <- as.data.frame(results_adults_1day)  %>%
+    select(predicted_prob_disengage = Disengaged)
   results_adults_7day_df <- as.data.frame(results_adults_7day) %>%
     select(predicted_prob_disengage_7day = Disengaged)
-  results_minors_1day_df <- as.data.frame(results_minors_1day)
+  results_minors_1day_df <- as.data.frame(results_minors_1day) %>%
+    select(predicted_prob_disengage = Disengaged)
   results_minors_7day_df <- as.data.frame(results_minors_7day) %>%
     select(predicted_prob_disengage_7day = Disengaged)
 
@@ -217,7 +219,7 @@ function(
     bind_cols(results_adults_1day_df) %>%
     bind_cols(results_adults_7day_df) %>%
     # reduce data frame and rename the result
-    select(person_id, encounter_id, location_id, rtc_date, predicted_prob_disengage = Disengaged, predicted_prob_disengage_7day) %>%
+    select(person_id, encounter_id, location_id, rtc_date, predicted_prob_disengage, predicted_prob_disengage_7day) %>%
     # calculate the patient's risk category
     predict_risk(cohort, "adults") %>%
     # add per-row metadata about the run
@@ -227,7 +229,7 @@ function(
       start_date = start_of_week,
       end_date = end_of_week,
       week = get_week_number(rtc_date),
-      .keep = "unused"
+      .keep = "all"
     )
 
   # ditto but for pediatric patients
@@ -236,7 +238,7 @@ function(
     bind_cols(results_minors_1day_df) %>%
     bind_cols(results_minors_7day_df) %>%
     # reduce data frame and rename the result
-    select(person_id, encounter_id, location_id, rtc_date, predicted_prob_disengage = Disengaged, predicted_prob_disengage_7day) %>%
+    select(person_id, encounter_id, location_id, rtc_date, predicted_prob_disengage, predicted_prob_disengage_7day) %>%
     # calculate the patient's risk category
     predict_risk(cohort, "minors") %>%
     # add per-row metadata about the run
@@ -246,7 +248,7 @@ function(
       start_date = start_of_week,
       end_date = end_of_week,
       week = get_week_number(rtc_date),
-      .keep = "unused"
+      .keep = "all"
     )
 
   # combine adult and peds results into one big frame
@@ -303,7 +305,7 @@ predict_risk <- function(.data, cohort, age_category) {
       )
     )
 
-    if (nrow(cutoffs) == 2) {
+    if (nrow(cutoffs) > 0) {
       medium_risk <- cutoffs %>%
         filter(risk == "Medium Risk" & model_type == "1 day") %>%
         select(location_id, probability_threshold)

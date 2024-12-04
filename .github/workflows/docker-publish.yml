@@ -22,4 +22,4 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           push: true
-          tags: ampathke/ampath-iit-prediction-model-v9:latest
+          tags: ampathke/ampath-iit-prediction-model-v11:latest

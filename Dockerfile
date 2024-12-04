@@ -48,8 +48,7 @@ RUN chmod 0644 /etc/cron.d/iit-crontab
 RUN crontab -u root /etc/cron.d/iit-crontab
 
 # Add the prediction models to the app
-COPY IIT-Prediction/model/V9B /app/model
-COPY IIT-Prediction/model/V10 /app/model
+COPY IIT-Prediction/model/V11 /app/model
 # Add the production extraction query to the app
 COPY SQL/iit_prod_data_extract.sql /app/iit_prod_data_extract.sql
 # Add the procution threshold queries to the app

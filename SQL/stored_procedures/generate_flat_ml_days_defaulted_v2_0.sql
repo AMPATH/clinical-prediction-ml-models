@@ -1,5 +1,6 @@
 drop procedure if exists generate_flat_ml_days_defaulted_v1_0;
-create definer=analytics procedure generate_flat_ml_days_defaulted_v1_0()
+drop procedure if exists generate_flat_ml_days_defaulted_v1_0;
+create definer=analytics procedure generate_flat_ml_days_defaulted_v2_0()
 begin
     drop table predictions.flat_ml_days_defaulted;
     create table predictions.flat_ml_days_defaulted as
@@ -9,7 +10,7 @@ begin
         from etl.flat_hiv_summary_v15b fs
         where arv_start_date is not null
           and is_clinical_encounter = 1
-          and encounter_datetime >= date('2016-01-01')
+          and encounter_datetime >= date('2021-01-01')
           and not (
                     rtc_date = prev_rtc_date
                 and encounter_type = prev_encounter_type_hiv
@@ -39,13 +40,13 @@ begin
             encounter_id,
             encounter_datetime,
             visit_number,
-            datediff(encounter_datetime, prev_clinical_rtc_date_hiv) as days_defaulted
+            min(max(datediff(encounter_datetime, prev_clinical_rtc_date_hiv), -31), 365) as days_defaulted
         from ml_flat_hiv_summary_with_encounter_number
     )
     select
         person_id,
         encounter_id,
-        date(encounter_datetime) as ecnounter_date,
+        date(encounter_datetime) as encounter_date,
         visit_number,
         coalesce(
             dd.days_defaulted,

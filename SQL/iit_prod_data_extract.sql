@@ -67,8 +67,8 @@ select
     -- the model is trained on data from 2021, so we recalculate the visit number from the
     -- default data
     dd.visit_number as Visit_Number,
-    days_defaulted_last_encounter as Days_defaulted_in_prev_enc,
-    if(days_defaulted_last_encounter is null, 1, 0) as Days_defaulted_in_prev_enc_NA,
+    log(days_defaulted_last_encounter) as Days_defaulted_in_prev_enc_log,
+    if(days_defaulted_last_encounter is null, 1, 0) as Days_defaulted_in_prev_enc_log_NA,
     num_1day_defaults_last_3_visits as num_1day_defaults_last_3visits,
     coalesce(fs.hiv_disclosure_status_value, 'Not Done') as HIV_disclosure_stage,
     fs.tb_test_result as TB_Test_Result,
@@ -130,11 +130,11 @@ where
   and fs.encounter_type not in (111, 99999)
   -- ET 116 - Transfer Encounter; 9998 - transfer expected to AMPATH clinic
   and (fs.encounter_type != 116 or fs.transfer_in_location_id = 9998)
-  -- 9999 - transfered to non-AMPATH clinic, we discount these for the list of patient's that we care about trying to
+  -- 9999 - transferred to non-AMPATH clinic, we discount these for the list of patient's that we care about trying to
   -- proactively follow-up on since we do not anticipate these patient's returning to AMPATH. If they do, they will be
   -- returned to normal status at whatever clinic they visit
   -- 9998 - transferred to different AMPATH clinic. We discount these as we have no indication of which clinic
-  -- the patient is transfering to; non-9998 values indicate the clinic transferred from
+  -- the patient is transferring to; non-9998 values indicate the clinic transferred from
   and (fs.transfer_in_location_id is null or fs.transfer_in_location_id not in (9998, 9999))
   and (fs.transfer_out_location_id is null or fs.transfer_out_location_id not in (9998, 9999))
   and fs.is_clinical_encounter = 1
