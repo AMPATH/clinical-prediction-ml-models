@@ -295,7 +295,7 @@ get_week_number <- function(date) {
 predict_risk <- function(.data, cohort, age_category) {
   # arbitrary cut-off, but we expect one big batch per week
   # and several small batches; small batches are handled by this if
-  if (nrow(.data) < 200) {
+  if (nrow(.data) < 50) {
     cutoffs <- DBI::dbGetQuery(
       my_pool,
       DBI::sqlInterpolate(
