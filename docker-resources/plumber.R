@@ -200,11 +200,8 @@ function(
     select(predicted_prob_disengage_7day = Disengaged)
 
   # for the case where we need this, it should be safe to assume
-  # that the start week has the correct values
-  # a cohort is the predictions generated for a given week
-  # note that we use the week _before_ the start date; this is because the calls
-  # should be made a week before the RTC date
-  cohort <- clock::date_format(clock::add_weeks(start_date, -1), format="%Y-W%U")
+  # that the start week has the correct valuese
+  prediction_week <- clock::date_format(start_of_week, format="%Y-W%U")
 
   # the h2o result dataframes do not have the person_id, encounter_id, or location_id
   # as these are not used in generating predictions, so here we add those back in
@@ -221,7 +218,7 @@ function(
     # reduce data frame and rename the result
     select(person_id, encounter_id, location_id, rtc_date, predicted_prob_disengage, predicted_prob_disengage_7day) %>%
     # calculate the patient's risk category
-    predict_risk(cohort, "adults") %>%
+    predict_risk(prediction_week, "adults") %>%
     # add per-row metadata about the run
     mutate(
       prediction_generated_date = Sys.time(),
@@ -240,7 +237,7 @@ function(
     # reduce data frame and rename the result
     select(person_id, encounter_id, location_id, rtc_date, predicted_prob_disengage, predicted_prob_disengage_7day) %>%
     # calculate the patient's risk category
-    predict_risk(cohort, "minors") %>%
+    predict_risk(prediction_week, "minors") %>%
     # add per-row metadata about the run
     mutate(
       prediction_generated_date = Sys.time(),
@@ -292,7 +289,7 @@ get_week_number <- function(date) {
 }
 
 # this is a utility function that mostly handles the risk thresholding
-predict_risk <- function(.data, cohort, age_category) {
+predict_risk <- function(.data, prediction_week, age_category) {
   # arbitrary cut-off, but we expect one big batch per week
   # and several small batches; small batches are handled by this if
   if (nrow(.data) < 50) {
@@ -301,7 +298,7 @@ predict_risk <- function(.data, cohort, age_category) {
       DBI::sqlInterpolate(
         my_pool,
         ifelse(age_category == "minors", minor_risk_threshold_query, adult_risk_threshold_query),
-        week = cohort
+        week = prediction_week
       )
     )
 
@@ -328,16 +325,16 @@ predict_risk <- function(.data, cohort, age_category) {
           group_by(location_id) %>%
           mutate(
             hrisk_threshold = high_risk %>%
-              filter(location_id == cur_group()$location_id) %>%
+              filter(location_id == cur_group() %>% pull(location_id)) %>%
               select(probability_threshold) %>% pull,
             hrisk_threshold_7day = high_risk_7day %>%
-              filter(location_id == cur_group()$location_id) %>%
+              filter(location_id == cur_group() %>% pull(location_id)) %>%
               select(probability_threshold) %>% pull,
             mrisk_threshold = medium_risk %>%
-              filter(location_id == cur_group()$location_id) %>%
+              filter(location_id == cur_group() %>% pull(location_id)) %>%
               select(probability_threshold) %>% pull,
             mrisk_threshold_7day = medium_risk_7day %>%
-              filter(location_id == cur_group()$location_id) %>%
+              filter(location_id == cur_group() %>% pull(location_id)) %>%
               select(probability_threshold) %>% pull,
             predicted_risk =
               case_when(
