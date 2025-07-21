@@ -129,13 +129,16 @@ where
     -- Moi's Bridge, Moiben, Kapyemit Dispensary and Elgeyo Border Dispensary added retro-actively
     325, 326, 399, 400,
     -- Bumala A MCH and Bumala B MCH
-    315, 316
+    315, 316,
+    -- Turbo MCH add retro-actively
+    329
   )
   -- filter encounters: 111 - LabResult, 99999 - lab encounter type
   -- these encounters are post-visit lab result entries and should not appear in predicted data
   and fs.encounter_type not in (111, 99999)
   -- ET 116 - Transfer Encounter; 9998 - transfer expected to AMPATH clinic
   and (fs.encounter_type != 116 or fs.transfer_in_location_id = 9998)
+  and fs.transfer_out_date is null
   -- 9999 - transferred to non-AMPATH clinic, we discount these for the list of patient's that we care about trying to
   -- proactively follow-up on since we do not anticipate these patient's returning to AMPATH. If they do, they will be
   -- returned to normal status at whatever clinic they visit
