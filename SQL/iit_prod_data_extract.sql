@@ -122,16 +122,18 @@ where
     72, 54, 414, 73, 74, 75, 12, 100, 148, 418, 106, 70,
     -- October 2024 (Done November)
     144, 416, 3, 330, 176, 28, 153, 496, 497, 31, 498,
-    -- Fountain HC added retro-actively
+    -- Fountain HC added retroactively
     147,
-    -- Langas MCH added retro-actively
+    -- Langas MCH added retroactively
     324,
-    -- Moi's Bridge, Moiben, Kapyemit Dispensary and Elgeyo Border Dispensary added retro-actively
+    -- Moi's Bridge, Moiben, Kapyemit Dispensary and Elgeyo Border Dispensary added retro-ctively
     325, 326, 399, 400,
     -- Bumala A MCH and Bumala B MCH
     315, 316,
-    -- Turbo MCH add retro-actively
-    329
+    -- Turbo MCH added retroactively
+    329,
+    -- Mihuu MCH and Sinoko MCH added retroactively
+    337, 340
   )
   -- filter encounters: 111 - LabResult, 99999 - lab encounter type
   -- these encounters are post-visit lab result entries and should not appear in predicted data
