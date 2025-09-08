@@ -25,7 +25,7 @@ DBI::dbExecute(
 
 DBI::dbExecute(
   my_pool,
-  "CALL predictions.generate_flat_ml_days_defaulted_v2_0();"
+  "CALL predictions.generate_flat_ml_days_defaulted_v1_0();"
 )
 
 DBI::dbExecute(
