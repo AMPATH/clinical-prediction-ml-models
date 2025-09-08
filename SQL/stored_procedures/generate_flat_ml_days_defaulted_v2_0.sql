@@ -1,5 +1,4 @@
 drop procedure if exists generate_flat_ml_days_defaulted_v1_0;
-drop procedure if exists generate_flat_ml_days_defaulted_v1_0;
 create definer=analytics procedure generate_flat_ml_days_defaulted_v2_0()
 begin
     drop table predictions.flat_ml_days_defaulted;
@@ -40,7 +39,7 @@ begin
             encounter_id,
             encounter_datetime,
             visit_number,
-            min(max(datediff(encounter_datetime, prev_clinical_rtc_date_hiv), -31), 365) as days_defaulted
+            least(greatest(datediff(encounter_datetime, prev_clinical_rtc_date_hiv), -31), 365) as days_defaulted
         from ml_flat_hiv_summary_with_encounter_number
     )
     select
