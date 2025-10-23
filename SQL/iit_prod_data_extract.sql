@@ -133,7 +133,9 @@ where
     -- Turbo MCH added retroactively
     329,
     -- Mihuu MCH and Sinoko MCH added retroactively
-    337, 340
+    337, 340,
+    -- West Clinic MCH added retroactively
+    398
   )
   -- filter encounters: 111 - LabResult, 99999 - lab encounter type
   -- these encounters are post-visit lab result entries and should not appear in predicted data
