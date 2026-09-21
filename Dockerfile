@@ -53,7 +53,7 @@ COPY IIT-Prediction/model/V11 /app/model
 COPY SQL/iit_prod_data_extract.sql /app/iit_prod_data_extract.sql
 # Add the procution threshold queries to the app
 COPY SQL/iit_prod_threshold_adult.sql /app/iit_prod_threshold_adult.sql
-COPY SQL/iit_prod_threshold_adult.sql /app/iit_prod_threshold_pediatric.sql
+COPY SQL/iit_prod_threshold_pediatric.sql /app/iit_prod_threshold_pediatric.sql
 
 # now we also need to add the R code used here
 # this R code actually runs the stored procedures for run_daily_stored_procedures.sh

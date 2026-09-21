@@ -199,10 +199,6 @@ function(
   results_minors_7day_df <- as.data.frame(results_minors_7day) %>%
     select(predicted_prob_disengage_7day = Disengaged)
 
-  # for the case where we need this, it should be safe to assume
-  # that the start week has the correct valuese
-  prediction_week <- clock::date_format(start_of_week, format="%Y-W%U")
-
   # the h2o result dataframes do not have the person_id, encounter_id, or location_id
   # as these are not used in generating predictions, so here we add those back in
   #
@@ -218,7 +214,7 @@ function(
     # reduce data frame and rename the result
     select(person_id, encounter_id, location_id, rtc_date, predicted_prob_disengage, predicted_prob_disengage_7day) %>%
     # calculate the patient's risk category
-    predict_risk(prediction_week, "adults") %>%
+    predict_risk("adults") %>%
     # add per-row metadata about the run
     mutate(
       prediction_generated_date = Sys.time(),
@@ -237,7 +233,7 @@ function(
     # reduce data frame and rename the result
     select(person_id, encounter_id, location_id, rtc_date, predicted_prob_disengage, predicted_prob_disengage_7day) %>%
     # calculate the patient's risk category
-    predict_risk(prediction_week, "minors") %>%
+    predict_risk("minors") %>%
     # add per-row metadata about the run
     mutate(
       prediction_generated_date = Sys.time(),
@@ -288,8 +284,44 @@ get_week_number <- function(date) {
   paste0(clock::get_year(ywd), "-W", stringr::str_pad(clock::get_week(ywd), 2, pad = "0"))
 }
 
+# the per-location cut-offs used to turn a probability into a risk category
+threshold_columns <- c(
+  "hrisk_threshold",
+  "mrisk_threshold",
+  "hrisk_threshold_7day",
+  "mrisk_threshold_7day"
+)
+
 # this is a utility function that mostly handles the risk thresholding
-predict_risk <- function(.data, prediction_week, age_category) {
+#
+# a row belongs to the week its own appointment falls in, and each of those weeks is scored on its
+# own terms: one week of a request may be a small top-up that reuses the thresholds already stored
+# for it, while another is a full batch that derives its own
+predict_risk <- function(.data, age_category) {
+  if (nrow(.data) == 0) {
+    return(
+      .data %>%
+        mutate(predicted_risk = NA_character_, predicted_risk_7day = NA_character_)
+    )
+  }
+
+  .data %>%
+    mutate(
+      prediction_week = get_week_number(rtc_date),
+      # group_split() returns the weeks in its own order, so the input order is restored afterwards
+      row_order = row_number()
+    ) %>%
+    group_split(prediction_week) %>%
+    map(predict_risk_for_week, age_category = age_category) %>%
+    bind_rows() %>%
+    arrange(row_order) %>%
+    select(-c(prediction_week, row_order))
+}
+
+# scores a single week's rows; .data must hold exactly one prediction_week
+predict_risk_for_week <- function(.data, age_category) {
+  prediction_week <- .data$prediction_week[[1]]
+
   # arbitrary cut-off, but we expect one big batch per week
   # and several small batches; small batches are handled by this if
   if (nrow(.data) < 50) {
@@ -303,39 +335,28 @@ predict_risk <- function(.data, prediction_week, age_category) {
     )
 
     if (nrow(cutoffs) > 0) {
-      medium_risk <- cutoffs %>%
-        filter(risk == "Medium Risk" & model_type == "1 day") %>%
-        select(location_id, probability_threshold)
+      # the query returns the four thresholds as separate unioned blocks; pivoting them into one
+      # row per location lets them be joined onto the predictions
+      thresholds <- cutoffs %>%
+        mutate(
+          threshold_name = case_when(
+            risk == "High Risk" & model_type == "1 day" ~ "hrisk_threshold",
+            risk == "Medium Risk" & model_type == "1 day" ~ "mrisk_threshold",
+            risk == "High Risk" & model_type == "7 day" ~ "hrisk_threshold_7day",
+            risk == "Medium Risk" & model_type == "7 day" ~ "mrisk_threshold_7day"
+          )
+        ) %>%
+        select(location_id, threshold_name, probability_threshold) %>%
+        pivot_wider(names_from = threshold_name, values_from = probability_threshold)
 
-      medium_risk_7day <- cutoffs %>%
-        filter(risk == "Medium Risk" & model_type == "7 day") %>%
-        select(location_id, probability_threshold)
+      thresholds[setdiff(threshold_columns, names(thresholds))] <- NA_real_
 
-      high_risk <- cutoffs %>%
-        filter(risk == "High Risk" & model_type == "1 day") %>%
-        select(location_id, probability_threshold)
-
-      high_risk_7day <- cutoffs %>%
-        filter(risk == "High Risk" & model_type == "7 day") %>%
-        select(location_id, probability_threshold)
-
-      # if we have risk thresholds, just use them
+      # a location with no thresholds for this week keeps NA thresholds, which leaves its patients
+      # unflagged rather than failing the batch
       return(
         .data %>%
-          group_by(location_id) %>%
+          left_join(thresholds, by = "location_id") %>%
           mutate(
-            hrisk_threshold = high_risk %>%
-              filter(location_id == cur_group() %>% pull(location_id)) %>%
-              select(probability_threshold) %>% pull,
-            hrisk_threshold_7day = high_risk_7day %>%
-              filter(location_id == cur_group() %>% pull(location_id)) %>%
-              select(probability_threshold) %>% pull,
-            mrisk_threshold = medium_risk %>%
-              filter(location_id == cur_group() %>% pull(location_id)) %>%
-              select(probability_threshold) %>% pull,
-            mrisk_threshold_7day = medium_risk_7day %>%
-              filter(location_id == cur_group() %>% pull(location_id)) %>%
-              select(probability_threshold) %>% pull,
             predicted_risk =
               case_when(
                 predicted_prob_disengage >= hrisk_threshold ~ "High Risk",
@@ -350,8 +371,7 @@ predict_risk <- function(.data, prediction_week, age_category) {
               ),
             .keep = "all"
           ) %>%
-          ungroup() %>%
-          select(-c(hrisk_threshold, mrisk_threshold))
+          select(-any_of(threshold_columns))
       )
     }
   }
